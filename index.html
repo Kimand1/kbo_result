@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2026 KBO 팀별 일별 순위</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #1d2433;
+      --muted: #697386;
+      --line: #d8dee9;
+      --soft-line: #edf0f5;
+      --accent: #2557a7;
+      --good-bg: #d8f0dd;
+      --bad-bg: #ffdcd8;
+      --even-bg: #f6f7fa;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .page {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 28px 24px 36px;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.2;
+      font-weight: 800;
+    }
+
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      min-width: 240px;
+    }
+
+    button {
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 12px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--accent); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    .chart-panel,
+    .rank-panel,
+    .results-panel,
+    .matchup-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 8px 28px rgba(20, 32, 55, 0.06);
+    }
+
+    .chart-panel {
+      min-height: 680px;
+      padding: 18px 18px 12px;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 620px;
+      width: 100%;
+    }
+
+    .rank-panel {
+      padding: 16px;
+    }
+
+    .rank-panel h2,
+    .results-panel h2,
+    .matchup-panel h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      line-height: 1.3;
+    }
+
+    .results-panel,
+    .matchup-panel {
+      margin-top: 16px;
+      padding: 16px 18px 18px;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+
+    .section-heading h2 {
+      margin-bottom: 4px;
+    }
+
+    .section-meta {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 8px 7px;
+      border-bottom: 1px solid var(--soft-line);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .rank-table td:first-child,
+    .rank-table th:first-child {
+      width: 58px;
+      text-align: center;
+    }
+
+    .rank-table td:nth-child(2),
+    .rank-table th:nth-child(2) {
+      width: 44px;
+      text-align: right;
+    }
+
+    .rank-table td:nth-child(n+4),
+    .rank-table th:nth-child(n+4),
+    .matchup-table td {
+      text-align: center;
+    }
+
+    .all-filter-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .team-filter {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      vertical-align: middle;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .rank-table tbody tr {
+      cursor: pointer;
+      transition: background-color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .rank-table tbody tr:hover {
+      background: #f4f7fc;
+    }
+
+    .rank-table tbody tr.selected {
+      background: #e6efff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .rank-table tbody tr.selected td:nth-child(2),
+    .rank-table tbody tr.selected td:nth-child(3) {
+      font-weight: 800;
+    }
+
+    .score-cell {
+      color: var(--text);
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .winner,
+    .total-cell {
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .result-note,
+    .footnote {
+      color: var(--muted);
+    }
+
+    .team-cell {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+
+    .matchup-table th {
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .matchup-table th:first-child,
+    .matchup-table td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: #fff;
+      text-align: left;
+    }
+
+    .matchup-table th span {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .matchup-table .good { background: var(--good-bg); font-weight: 700; }
+    .matchup-table .bad { background: var(--bad-bg); }
+    .matchup-table .even { background: var(--even-bg); }
+    .matchup-table .self-cell { color: var(--muted); background: #fafbfc; }
+
+    .footnote {
+      margin: 14px 0 0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover { text-decoration: underline; }
+
+    @media (max-width: 980px) {
+      .page { padding: 20px 14px 28px; }
+      header { align-items: flex-start; flex-direction: column; }
+      .actions { justify-content: flex-start; min-width: 0; }
+      .layout { grid-template-columns: 1fr; }
+      .chart-panel { min-height: 560px; padding: 14px; }
+      .chart-wrap { height: 500px; }
+      .section-heading { align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div>
+        <h1>2026 KBO 팀별 일별 순위</h1>
+        <p class="meta">
+          <span id="dateRange"></span>
+          <span id="officialDate"></span>
+          <span>무경기일은 직전 공식 순위 유지</span>
+        </p>
+      </div>
+      <div class="actions" aria-label="차트 보기 옵션">
+        <button type="button" id="showAll">전체 표시</button>
+        <button type="button" id="hideAll">전체 숨김</button>
+        <button type="button" id="showTop5">현재 상위 5팀</button>
+      </div>
+    </header>
+
+    <section class="layout">
+      <div class="chart-panel">
+        <div class="chart-wrap">
+          <canvas id="rankChart" aria-label="2026 KBO 팀별 일별 순위 꺾은선 그래프"></canvas>
+        </div>
+      </div>
+
+      <aside class="rank-panel">
+        <h2>최신 순위</h2>
+        <table class="rank-table">
+          <thead>
+            <tr>
+              <th><label class="all-filter-label"><input class="team-filter" type="checkbox" id="allTeamsCheckbox" checked>전체</label></th>
+              <th>순위</th><th>팀</th><th>승</th><th>패</th><th>무</th><th>승률</th><th>게임차</th>
+            </tr>
+          </thead>
+          <tbody>
+
+          <tr class="rank-row" data-team="LG" tabindex="0" aria-label="LG 선택">
+            <td><input class="team-filter" type="checkbox" value="LG" aria-label="LG 경기 보기"></td>
+            <td>1위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#f92776"></span>LG</span></td>
+            <td>42</td>
+            <td>24</td>
+            <td>0</td>
+            <td>.636</td>
+            <td>0</td>
+          </tr>
+          <tr class="rank-row" data-team="KT" tabindex="0" aria-label="KT 선택">
+            <td><input class="team-filter" type="checkbox" value="KT" aria-label="KT 경기 보기"></td>
+            <td>2위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#6f58a8"></span>KT</span></td>
+            <td>39</td>
+            <td>25</td>
+            <td>1</td>
+            <td>.609</td>
+            <td>2</td>
+          </tr>
+          <tr class="rank-row" data-team="삼성" tabindex="0" aria-label="삼성 선택">
+            <td><input class="team-filter" type="checkbox" value="삼성" aria-label="삼성 경기 보기"></td>
+            <td>3위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#0061b2"></span>삼성</span></td>
+            <td>37</td>
+            <td>27</td>
+            <td>1</td>
+            <td>.578</td>
+            <td>4</td>
+          </tr>
+          <tr class="rank-row" data-team="KIA" tabindex="0" aria-label="KIA 선택">
+            <td><input class="team-filter" type="checkbox" value="KIA" aria-label="KIA 경기 보기"></td>
+            <td>4위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#02abba"></span>KIA</span></td>
+            <td>34</td>
+            <td>32</td>
+            <td>1</td>
+            <td>.515</td>
+            <td>8</td>
+          </tr>
+          <tr class="rank-row" data-team="두산" tabindex="0" aria-label="두산 선택">
+            <td><input class="team-filter" type="checkbox" value="두산" aria-label="두산 경기 보기"></td>
+            <td>5위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#0c0d28"></span>두산</span></td>
+            <td>33</td>
+            <td>32</td>
+            <td>2</td>
+            <td>.508</td>
+            <td>8.5</td>
+          </tr>
+          <tr class="rank-row" data-team="한화" tabindex="0" aria-label="한화 선택">
+            <td><input class="team-filter" type="checkbox" value="한화" aria-label="한화 경기 보기"></td>
+            <td>6위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#529e01"></span>한화</span></td>
+            <td>32</td>
+            <td>32</td>
+            <td>1</td>
+            <td>.500</td>
+            <td>9</td>
+          </tr>
+          <tr class="rank-row" data-team="NC" tabindex="0" aria-label="NC 선택">
+            <td><input class="team-filter" type="checkbox" value="NC" aria-label="NC 경기 보기"></td>
+            <td>7위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#af917b"></span>NC</span></td>
+            <td>29</td>
+            <td>34</td>
+            <td>1</td>
+            <td>.460</td>
+            <td>11.5</td>
+          </tr>
+          <tr class="rank-row" data-team="SSG" tabindex="0" aria-label="SSG 선택">
+            <td><input class="team-filter" type="checkbox" value="SSG" aria-label="SSG 경기 보기"></td>
+            <td>8위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#e0002a"></span>SSG</span></td>
+            <td>27</td>
+            <td>38</td>
+            <td>1</td>
+            <td>.415</td>
+            <td>14.5</td>
+          </tr>
+          <tr class="rank-row" data-team="롯데" tabindex="0" aria-label="롯데 선택">
+            <td><input class="team-filter" type="checkbox" value="롯데" aria-label="롯데 경기 보기"></td>
+            <td>9위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#fb7e32"></span>롯데</span></td>
+            <td>25</td>
+            <td>39</td>
+            <td>1</td>
+            <td>.391</td>
+            <td>16</td>
+          </tr>
+          <tr class="rank-row" data-team="키움" tabindex="0" aria-label="키움 선택">
+            <td><input class="team-filter" type="checkbox" value="키움" aria-label="키움 경기 보기"></td>
+            <td>10위</td>
+            <td><span class="team-cell"><span class="swatch" style="background:#777777"></span>키움</span></td>
+            <td>26</td>
+            <td>41</td>
+            <td>1</td>
+            <td>.388</td>
+            <td>16.5</td>
+          </tr>
+          </tbody>
+        </table>
+        <p class="footnote">
+          자료: <a href="https://www.koreabaseball.com/Record/TeamRank/GraphDaily.aspx" target="_blank" rel="noreferrer">KBO 팀별 순위변동 그래프</a><br>
+          Chart.js CDN을 사용하므로 인터넷 연결이 필요합니다.
+        </p>
+      </aside>
+    </section>
+
+    <section class="results-panel" aria-labelledby="recentResultsTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="recentResultsTitle">최근 완료 경기 결과</h2>
+          <p class="section-meta" id="recentResultsMeta"></p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>날짜</th><th>시간</th><th>원정</th><th>스코어</th><th>홈</th><th>구장</th><th>결과</th></tr>
+          </thead>
+          <tbody id="recentResultsTable"></tbody>
+        </table>
+      </div>
+      <p class="footnote">
+        결과 출처: <a href="https://www.koreabaseball.com/Schedule/Schedule.aspx" target="_blank" rel="noreferrer">KBO 경기일정/결과</a>
+      </p>
+    </section>
+
+    <section class="matchup-panel" aria-labelledby="matchupTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="matchupTitle">2026 시즌 팀별 상대전적</h2>
+          <p class="section-meta">2026-06-16 완료 경기 기준, 각 셀은 행의 팀 관점 승-패-무입니다.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="matchup-table">
+          <thead>
+
+          <tr>
+            <th>팀</th>
+            <th>LG<br><span>승-패-무</span></th><th>KT<br><span>승-패-무</span></th><th>삼성<br><span>승-패-무</span></th><th>KIA<br><span>승-패-무</span></th><th>두산<br><span>승-패-무</span></th><th>한화<br><span>승-패-무</span></th><th>NC<br><span>승-패-무</span></th><th>SSG<br><span>승-패-무</span></th><th>롯데<br><span>승-패-무</span></th><th>키움<br><span>승-패-무</span></th>
+            <th>합계</th>
+          </tr>
+          </thead>
+          <tbody>
+
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#f92776"></span>LG</span></th>
+            <td class="self-cell">-</td><td class="bad">3-5-0</td><td class="bad">2-3-0</td><td class="good">7-2-0</td><td class="good">4-2-0</td><td class="even">3-3-0</td><td class="good">5-3-0</td><td class="good">8-1-0</td><td class="good">6-3-0</td><td class="good">4-2-0</td>
+            <td class="total-cell">42-24-0</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#6f58a8"></span>KT</span></th>
+            <td class="good">5-3-0</td><td class="self-cell">-</td><td class="bad">3-5-0</td><td class="good">5-1-0</td><td class="good">5-2-0</td><td class="good">4-2-0</td><td class="good">6-2-0</td><td class="bad">3-6-0</td><td class="even">2-2-0</td><td class="good">6-2-1</td>
+            <td class="total-cell">39-25-1</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#0061b2"></span>삼성</span></th>
+            <td class="good">3-2-0</td><td class="good">5-3-0</td><td class="self-cell">-</td><td class="bad">3-5-0</td><td class="even">4-4-1</td><td class="good">5-1-0</td><td class="good">7-2-0</td><td class="even">4-4-0</td><td class="bad">2-3-0</td><td class="good">4-3-0</td>
+            <td class="total-cell">37-27-1</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#02abba"></span>KIA</span></th>
+            <td class="bad">2-7-0</td><td class="bad">1-5-0</td><td class="good">5-3-0</td><td class="self-cell">-</td><td class="bad">4-5-0</td><td class="good">5-4-0</td><td class="bad">2-4-0</td><td class="good">3-2-0</td><td class="good">6-2-1</td><td class="good">6-0-0</td>
+            <td class="total-cell">34-32-1</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#0c0d28"></span>두산</span></th>
+            <td class="bad">2-4-0</td><td class="bad">2-5-0</td><td class="even">4-4-1</td><td class="good">5-4-0</td><td class="self-cell">-</td><td class="bad">3-5-1</td><td class="good">3-1-0</td><td class="even">3-3-0</td><td class="good">6-3-0</td><td class="good">5-3-0</td>
+            <td class="total-cell">33-32-2</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#529e01"></span>한화</span></th>
+            <td class="even">3-3-0</td><td class="bad">2-4-0</td><td class="bad">1-5-0</td><td class="bad">4-5-0</td><td class="good">5-3-1</td><td class="self-cell">-</td><td class="bad">2-4-0</td><td class="good">6-2-0</td><td class="good">5-2-0</td><td class="even">4-4-0</td>
+            <td class="total-cell">32-32-1</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#af917b"></span>NC</span></th>
+            <td class="bad">3-5-0</td><td class="bad">2-6-0</td><td class="bad">2-7-0</td><td class="good">4-2-0</td><td class="bad">1-3-0</td><td class="good">4-2-0</td><td class="self-cell">-</td><td class="even">2-2-1</td><td class="good">7-2-0</td><td class="bad">4-5-0</td>
+            <td class="total-cell">29-34-1</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#e0002a"></span>SSG</span></th>
+            <td class="bad">1-8-0</td><td class="good">6-3-0</td><td class="even">4-4-0</td><td class="bad">2-3-0</td><td class="even">3-3-0</td><td class="bad">2-6-0</td><td class="even">2-2-1</td><td class="self-cell">-</td><td class="bad">3-4-0</td><td class="bad">4-5-0</td>
+            <td class="total-cell">27-38-1</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#fb7e32"></span>롯데</span></th>
+            <td class="bad">3-6-0</td><td class="even">2-2-0</td><td class="good">3-2-0</td><td class="bad">2-6-1</td><td class="bad">3-6-0</td><td class="bad">2-5-0</td><td class="bad">2-7-0</td><td class="good">4-3-0</td><td class="self-cell">-</td><td class="good">4-2-0</td>
+            <td class="total-cell">25-39-1</td>
+          </tr>
+          <tr>
+            <th><span class="team-cell"><span class="swatch" style="background:#777777"></span>키움</span></th>
+            <td class="bad">2-4-0</td><td class="bad">2-6-1</td><td class="bad">3-4-0</td><td class="bad">0-6-0</td><td class="bad">3-5-0</td><td class="even">4-4-0</td><td class="good">5-4-0</td><td class="good">5-4-0</td><td class="bad">2-4-0</td><td class="self-cell">-</td>
+            <td class="total-cell">26-41-1</td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footnote">
+        상대전적은 KBO 월별 일정/결과의 정규시즌 완료 경기 스코어를 집계했습니다.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const RANK_CHART_DATA = {"title":"2026 KBO 팀별 일별 순위","generatedAtKst":"2026-06-17 10:30:59","sourcePage":"https://www.koreabaseball.com/Record/TeamRank/GraphDaily.aspx","sourceApi":"https://www.koreabaseball.com/ws/Record.asmx/GetTeamRankDaily","scheduleApi":"https://www.koreabaseball.com/ws/Schedule.asmx/GetScheduleList","note":"무경기일은 직전 공식 순위를 유지해 일별 라벨을 채웠습니다.","seasonStart":"2026-03-28","chartEndDate":"2026-06-16","latestOfficialDate":"2026-06-16","labels":["2026-03-28","2026-03-29","2026-03-30","2026-03-31","2026-04-01","2026-04-02","2026-04-03","2026-04-04","2026-04-05","2026-04-06","2026-04-07","2026-04-08","2026-04-09","2026-04-10","2026-04-11","2026-04-12","2026-04-13","2026-04-14","2026-04-15","2026-04-16","2026-04-17","2026-04-18","2026-04-19","2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24","2026-04-25","2026-04-26","2026-04-27","2026-04-28","2026-04-29","2026-04-30","2026-05-01","2026-05-02","2026-05-03","2026-05-04","2026-05-05","2026-05-06","2026-05-07","2026-05-08","2026-05-09","2026-05-10","2026-05-11","2026-05-12","2026-05-13","2026-05-14","2026-05-15","2026-05-16","2026-05-17","2026-05-18","2026-05-19","2026-05-20","2026-05-21","2026-05-22","2026-05-23","2026-05-24","2026-05-25","2026-05-26","2026-05-27","2026-05-28","2026-05-29","2026-05-30","2026-05-31","2026-06-01","2026-06-02","2026-06-03","2026-06-04","2026-06-05","2026-06-06","2026-06-07","2026-06-08","2026-06-09","2026-06-10","2026-06-11","2026-06-12","2026-06-13","2026-06-14","2026-06-15","2026-06-16"],"datasets":[{"label":"LG","borderColor":"#f92776","backgroundColor":"#f92776","data":[6,7,7,8,8,5,6,6,5,5,5,3,3,1,1,1,1,1,2,2,3,3,3,3,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3,2,3,2,3,2,2,3,3,2,3,3,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"KT","borderColor":"#6f58a8","backgroundColor":"#6f58a8","data":[1,1,1,1,1,1,1,3,2,2,1,1,1,1,1,1,1,3,2,2,2,2,2,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,3,2,1,3,3,3,3,3,3,2,2,2,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"삼성","borderColor":"#0061b2","backgroundColor":"#0061b2","data":[6,7,7,8,6,4,4,4,4,4,4,6,6,4,3,3,3,2,1,1,1,1,1,1,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,2,3,2,3,1,3,3,1,1,1,1,1,1,1,1,1,1,1,3,3,3,2,3,3,3,3,3,3,3,3,3,3,3,3,3,3],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"KIA","borderColor":"#02abba","backgroundColor":"#02abba","data":[6,7,7,7,8,9,10,10,8,8,9,8,8,8,7,5,5,4,4,4,4,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,6,5,5,5,5,6,5,5,5,5,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,5,5,4,4,4,4],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"두산","borderColor":"#0c0d28","backgroundColor":"#0c0d28","data":[6,5,5,6,6,8,9,9,7,7,8,7,7,7,9,9,9,8,9,9,9,8,8,8,6,6,6,7,8,7,7,8,7,7,5,6,5,5,7,7,6,7,6,5,5,5,5,6,7,7,6,6,6,6,4,5,5,6,6,7,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,5,5,5],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"한화","borderColor":"#529e01","backgroundColor":"#529e01","data":[1,1,1,3,4,5,5,5,5,5,5,3,3,5,5,5,5,7,7,7,7,6,6,6,6,7,6,7,6,7,7,7,7,8,8,8,9,9,9,9,8,8,8,7,7,6,7,6,6,5,6,6,7,7,7,7,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,4,4,5,6,6,6],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"NC","borderColor":"#af917b","backgroundColor":"#af917b","data":[1,5,5,3,2,2,1,1,2,2,3,3,3,5,5,5,5,4,6,6,6,6,6,6,6,7,6,6,6,6,6,5,6,5,5,6,5,5,6,6,5,6,7,8,8,8,8,8,8,8,8,8,8,8,10,10,10,10,10,8,8,8,9,8,7,7,7,7,7,8,7,7,7,7,7,7,7,7,7,7,7],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"SSG","borderColor":"#e0002a","backgroundColor":"#e0002a","data":[1,1,1,1,2,2,1,1,1,1,1,1,1,1,4,4,4,4,4,4,5,4,4,4,4,4,3,3,3,3,3,3,2,2,3,3,3,3,3,3,3,3,4,4,4,4,4,4,4,4,4,4,4,4,4,5,5,6,6,6,7,7,7,7,8,8,8,8,8,7,8,8,8,8,8,8,8,8,8,8,8],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"키움","borderColor":"#777777","backgroundColor":"#777777","data":[6,7,7,8,8,9,6,7,8,8,7,8,8,10,10,10,10,10,10,10,10,10,10,10,10,9,10,9,9,9,9,9,9,9,9,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,9,8,9,9,9,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,10,9,9,10],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true},{"label":"롯데","borderColor":"#fb7e32","backgroundColor":"#fb7e32","data":[1,1,1,3,4,5,6,7,8,8,9,8,8,8,7,8,8,9,7,7,7,8,9,9,9,10,9,10,10,10,10,10,10,10,10,10,8,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,8,9,8,8,8,8,9,8,8,8,9,9,9,9,9,9,9,9,9,9,9,9,9,9,10,10,9],"pointRadius":0,"pointHoverRadius":5,"borderWidth":2,"tension":0.15,"fill":false,"spanGaps":true}],"latest":[{"team":"LG","color":"#f92776","rank":1},{"team":"KT","color":"#6f58a8","rank":2},{"team":"삼성","color":"#0061b2","rank":3},{"team":"KIA","color":"#02abba","rank":4},{"team":"두산","color":"#0c0d28","rank":5},{"team":"한화","color":"#529e01","rank":6},{"team":"NC","color":"#af917b","rank":7},{"team":"SSG","color":"#e0002a","rank":8},{"team":"롯데","color":"#fb7e32","rank":9},{"team":"키움","color":"#777777","rank":10}]};
+    const RECENT_GAMES = [{"date":"2026-03-28","time":"14:00","away":"KT","home":"LG","awayScore":11,"homeScore":7,"stadium":"잠실","completed":true},{"date":"2026-03-28","time":"14:00","away":"롯데","home":"삼성","awayScore":6,"homeScore":3,"stadium":"대구","completed":true},{"date":"2026-03-28","time":"14:00","away":"KIA","home":"SSG","awayScore":6,"homeScore":7,"stadium":"문학","completed":true},{"date":"2026-03-28","time":"14:00","away":"두산","home":"NC","awayScore":0,"homeScore":6,"stadium":"창원","completed":true},{"date":"2026-03-28","time":"14:00","away":"키움","home":"한화","awayScore":9,"homeScore":10,"stadium":"대전","completed":true},{"date":"2026-03-29","time":"14:00","away":"KT","home":"LG","awayScore":6,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-03-29","time":"14:00","away":"롯데","home":"삼성","awayScore":6,"homeScore":2,"stadium":"대구","completed":true},{"date":"2026-03-29","time":"14:00","away":"KIA","home":"SSG","awayScore":6,"homeScore":11,"stadium":"문학","completed":true},{"date":"2026-03-29","time":"14:00","away":"두산","home":"NC","awayScore":9,"homeScore":6,"stadium":"창원","completed":true},{"date":"2026-03-29","time":"14:00","away":"키움","home":"한화","awayScore":4,"homeScore":10,"stadium":"대전","completed":true},{"date":"2026-03-31","time":"18:30","away":"KIA","home":"LG","awayScore":7,"homeScore":2,"stadium":"잠실","completed":true},{"date":"2026-03-31","time":"18:30","away":"두산","home":"삼성","awayScore":5,"homeScore":5,"stadium":"대구","completed":true},{"date":"2026-03-31","time":"18:30","away":"키움","home":"SSG","awayScore":3,"homeScore":9,"stadium":"문학","completed":true},{"date":"2026-03-31","time":"18:30","away":"롯데","home":"NC","awayScore":2,"homeScore":9,"stadium":"창원","completed":true},{"date":"2026-03-31","time":"18:30","away":"KT","home":"한화","awayScore":9,"homeScore":4,"stadium":"대전","completed":true},{"date":"2026-04-01","time":"18:30","away":"KIA","home":"LG","awayScore":2,"homeScore":7,"stadium":"잠실","completed":true},{"date":"2026-04-01","time":"18:30","away":"두산","home":"삼성","awayScore":3,"homeScore":13,"stadium":"대구","completed":true},{"date":"2026-04-01","time":"18:30","away":"키움","home":"SSG","awayScore":11,"homeScore":2,"stadium":"문학","completed":true},{"date":"2026-04-01","time":"18:30","away":"롯데","home":"NC","awayScore":4,"homeScore":5,"stadium":"창원","completed":true},{"date":"2026-04-01","time":"18:30","away":"KT","home":"한화","awayScore":14,"homeScore":11,"stadium":"대전","completed":true},{"date":"2026-04-02","time":"18:30","away":"KIA","home":"LG","awayScore":1,"homeScore":2,"stadium":"잠실","completed":true},{"date":"2026-04-02","time":"18:30","away":"두산","home":"삼성","awayScore":2,"homeScore":5,"stadium":"대구","completed":true},{"date":"2026-04-02","time":"18:30","away":"키움","home":"SSG","awayScore":1,"homeScore":11,"stadium":"문학","completed":true},{"date":"2026-04-02","time":"18:30","away":"롯데","home":"NC","awayScore":4,"homeScore":8,"stadium":"창원","completed":true},{"date":"2026-04-02","time":"18:30","away":"KT","home":"한화","awayScore":13,"homeScore":8,"stadium":"대전","completed":true},{"date":"2026-04-03","time":"18:30","away":"한화","home":"두산","awayScore":11,"homeScore":6,"stadium":"잠실","completed":true},{"date":"2026-04-03","time":"18:30","away":"SSG","home":"롯데","awayScore":17,"homeScore":2,"stadium":"사직","completed":true},{"date":"2026-04-03","time":"18:30","away":"NC","home":"KIA","awayScore":5,"homeScore":2,"stadium":"광주","completed":true},{"date":"2026-04-03","time":"18:30","away":"삼성","home":"KT","awayScore":2,"homeScore":1,"stadium":"수원","completed":true},{"date":"2026-04-03","time":"18:30","away":"LG","home":"키움","awayScore":2,"homeScore":5,"stadium":"고척","completed":true},{"date":"2026-04-04","time":"14:00","away":"한화","home":"두산","awayScore":9,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-04-04","time":"17:00","away":"SSG","home":"롯데","awayScore":7,"homeScore":6,"stadium":"사직","completed":true},{"date":"2026-04-04","time":"17:00","away":"NC","home":"KIA","awayScore":6,"homeScore":0,"stadium":"광주","completed":true},{"date":"2026-04-04","time":"17:00","away":"삼성","home":"KT","awayScore":8,"homeScore":6,"stadium":"수원","completed":true},{"date":"2026-04-04","time":"17:00","away":"LG","home":"키움","awayScore":6,"homeScore":4,"stadium":"고척","completed":true},{"date":"2026-04-05","time":"14:00","away":"한화","home":"두산","awayScore":0,"homeScore":8,"stadium":"잠실","completed":true},{"date":"2026-04-05","time":"14:00","away":"SSG","home":"롯데","awayScore":4,"homeScore":3,"stadium":"사직","completed":true},{"date":"2026-04-05","time":"14:00","away":"NC","home":"KIA","awayScore":0,"homeScore":3,"stadium":"광주","completed":true},{"date":"2026-04-05","time":"14:00","away":"삼성","home":"KT","awayScore":0,"homeScore":2,"stadium":"수원","completed":true},{"date":"2026-04-05","time":"14:00","away":"LG","home":"키움","awayScore":6,"homeScore":5,"stadium":"고척","completed":true},{"date":"2026-04-07","time":"18:30","away":"키움","home":"두산","awayScore":5,"homeScore":2,"stadium":"잠실","completed":true},{"date":"2026-04-07","time":"18:30","away":"KT","home":"롯데","awayScore":7,"homeScore":3,"stadium":"사직","completed":true},{"date":"2026-04-07","time":"18:30","away":"한화","home":"SSG","awayScore":6,"homeScore":2,"stadium":"문학","completed":true},{"date":"2026-04-07","time":"18:30","away":"삼성","home":"KIA","awayScore":10,"homeScore":3,"stadium":"광주","completed":true},{"date":"2026-04-07","time":"18:30","away":"LG","home":"NC","awayScore":2,"homeScore":0,"stadium":"창원","completed":true},{"date":"2026-04-08","time":"18:30","away":"키움","home":"두산","awayScore":3,"homeScore":7,"stadium":"잠실","completed":true},{"date":"2026-04-08","time":"18:30","away":"KT","home":"롯데","awayScore":1,"homeScore":6,"stadium":"사직","completed":true},{"date":"2026-04-08","time":"18:30","away":"한화","home":"SSG","awayScore":4,"homeScore":3,"stadium":"문학","completed":true},{"date":"2026-04-08","time":"18:30","away":"삼성","home":"KIA","awayScore":5,"homeScore":15,"stadium":"광주","completed":true},{"date":"2026-04-08","time":"18:30","away":"LG","home":"NC","awayScore":5,"homeScore":4,"stadium":"창원","completed":true},{"date":"2026-04-10","time":"18:30","away":"SSG","home":"LG","awayScore":2,"homeScore":10,"stadium":"잠실","completed":true},{"date":"2026-04-10","time":"18:30","away":"NC","home":"삼성","awayScore":5,"homeScore":8,"stadium":"대구","completed":true},{"date":"2026-04-10","time":"18:30","away":"두산","home":"KT","awayScore":8,"homeScore":7,"stadium":"수원","completed":true},{"date":"2026-04-10","time":"18:30","away":"KIA","home":"한화","awayScore":6,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-04-10","time":"18:30","away":"롯데","home":"키움","awayScore":3,"homeScore":1,"stadium":"고척","completed":true},{"date":"2026-04-11","time":"14:00","away":"KIA","home":"한화","awayScore":6,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-04-11","time":"17:00","away":"SSG","home":"LG","awayScore":3,"homeScore":4,"stadium":"잠실","completed":true},{"date":"2026-04-11","time":"17:00","away":"NC","home":"삼성","awayScore":4,"homeScore":5,"stadium":"대구","completed":true},{"date":"2026-04-11","time":"17:00","away":"두산","home":"KT","awayScore":4,"homeScore":6,"stadium":"수원","completed":true},{"date":"2026-04-11","time":"17:00","away":"롯데","home":"키움","awayScore":3,"homeScore":1,"stadium":"고척","completed":true},{"date":"2026-04-12","time":"14:00","away":"SSG","home":"LG","awayScore":1,"homeScore":9,"stadium":"잠실","completed":true},{"date":"2026-04-12","time":"14:00","away":"NC","home":"삼성","awayScore":3,"homeScore":9,"stadium":"대구","completed":true},{"date":"2026-04-12","time":"14:00","away":"두산","home":"KT","awayScore":1,"homeScore":6,"stadium":"수원","completed":true},{"date":"2026-04-12","time":"14:00","away":"KIA","home":"한화","awayScore":9,"homeScore":3,"stadium":"대전","completed":true},{"date":"2026-04-12","time":"14:00","away":"롯데","home":"키움","awayScore":0,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-04-14","time":"18:30","away":"롯데","home":"LG","awayScore":1,"homeScore":2,"stadium":"잠실","completed":true},{"date":"2026-04-14","time":"18:30","away":"두산","home":"SSG","awayScore":11,"homeScore":3,"stadium":"문학","completed":true},{"date":"2026-04-14","time":"18:30","away":"키움","home":"KIA","awayScore":2,"homeScore":6,"stadium":"광주","completed":true},{"date":"2026-04-14","time":"18:30","away":"KT","home":"NC","awayScore":4,"homeScore":7,"stadium":"창원","completed":true},{"date":"2026-04-14","time":"18:30","away":"삼성","home":"한화","awayScore":6,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-04-15","time":"18:30","away":"롯데","home":"LG","awayScore":2,"homeScore":0,"stadium":"잠실","completed":true},{"date":"2026-04-15","time":"18:30","away":"두산","home":"SSG","awayScore":0,"homeScore":6,"stadium":"문학","completed":true},{"date":"2026-04-15","time":"18:30","away":"키움","home":"KIA","awayScore":5,"homeScore":7,"stadium":"광주","completed":true},{"date":"2026-04-15","time":"18:30","away":"KT","home":"NC","awayScore":10,"homeScore":2,"stadium":"창원","completed":true},{"date":"2026-04-15","time":"18:30","away":"삼성","home":"한화","awayScore":13,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-04-16","time":"18:30","away":"롯데","home":"LG","awayScore":4,"homeScore":7,"stadium":"잠실","completed":true},{"date":"2026-04-16","time":"18:30","away":"두산","home":"SSG","awayScore":1,"homeScore":2,"stadium":"문학","completed":true},{"date":"2026-04-16","time":"18:30","away":"키움","home":"KIA","awayScore":1,"homeScore":5,"stadium":"광주","completed":true},{"date":"2026-04-16","time":"18:30","away":"KT","home":"NC","awayScore":4,"homeScore":3,"stadium":"창원","completed":true},{"date":"2026-04-16","time":"18:30","away":"삼성","home":"한화","awayScore":6,"homeScore":1,"stadium":"대전","completed":true},{"date":"2026-04-17","time":"18:30","away":"KIA","home":"두산","awayScore":7,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-04-17","time":"18:30","away":"키움","home":"KT","awayScore":0,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-04-18","time":"14:00","away":"LG","home":"삼성","awayScore":2,"homeScore":7,"stadium":"대구","completed":true},{"date":"2026-04-18","time":"17:00","away":"KIA","home":"두산","awayScore":4,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-04-18","time":"17:00","away":"한화","home":"롯데","awayScore":5,"homeScore":0,"stadium":"사직","completed":true},{"date":"2026-04-18","time":"17:00","away":"키움","home":"KT","awayScore":2,"homeScore":4,"stadium":"수원","completed":true},{"date":"2026-04-18","time":"17:00","away":"SSG","home":"NC","awayScore":11,"homeScore":3,"stadium":"창원","completed":true},{"date":"2026-04-19","time":"14:00","away":"KIA","home":"두산","awayScore":3,"homeScore":6,"stadium":"잠실","completed":true},{"date":"2026-04-19","time":"14:00","away":"LG","home":"삼성","awayScore":5,"homeScore":0,"stadium":"대구","completed":true},{"date":"2026-04-19","time":"14:00","away":"한화","home":"롯데","awayScore":9,"homeScore":1,"stadium":"사직","completed":true},{"date":"2026-04-19","time":"14:00","away":"SSG","home":"NC","awayScore":2,"homeScore":9,"stadium":"창원","completed":true},{"date":"2026-04-19","time":"17:00","away":"키움","home":"KT","awayScore":3,"homeScore":1,"stadium":"수원","completed":true},{"date":"2026-04-21","time":"18:30","away":"한화","home":"LG","awayScore":5,"homeScore":6,"stadium":"잠실","completed":true},{"date":"2026-04-21","time":"18:30","away":"SSG","home":"삼성","awayScore":5,"homeScore":4,"stadium":"대구","completed":true},{"date":"2026-04-21","time":"18:30","away":"두산","home":"롯데","awayScore":6,"homeScore":2,"stadium":"사직","completed":true},{"date":"2026-04-21","time":"18:30","away":"KIA","home":"KT","awayScore":5,"homeScore":6,"stadium":"수원","completed":true},{"date":"2026-04-21","time":"18:30","away":"NC","home":"키움","awayScore":1,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-04-22","time":"18:30","away":"한화","home":"LG","awayScore":0,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-04-22","time":"18:30","away":"SSG","home":"삼성","awayScore":3,"homeScore":2,"stadium":"대구","completed":true},{"date":"2026-04-22","time":"18:30","away":"두산","home":"롯데","awayScore":9,"homeScore":1,"stadium":"사직","completed":true},{"date":"2026-04-22","time":"18:30","away":"KIA","home":"KT","awayScore":3,"homeScore":8,"stadium":"수원","completed":true},{"date":"2026-04-22","time":"18:30","away":"NC","home":"키움","awayScore":0,"homeScore":3,"stadium":"고척","completed":true},{"date":"2026-04-23","time":"18:30","away":"한화","home":"LG","awayScore":8,"homeScore":4,"stadium":"잠실","completed":true},{"date":"2026-04-23","time":"18:30","away":"SSG","home":"삼성","awayScore":8,"homeScore":2,"stadium":"대구","completed":true},{"date":"2026-04-23","time":"18:30","away":"두산","home":"롯데","awayScore":1,"homeScore":6,"stadium":"사직","completed":true},{"date":"2026-04-23","time":"18:30","away":"KIA","home":"KT","awayScore":3,"homeScore":8,"stadium":"수원","completed":true},{"date":"2026-04-23","time":"18:30","away":"NC","home":"키움","awayScore":12,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-04-24","time":"18:30","away":"LG","home":"두산","awayScore":4,"homeScore":1,"stadium":"잠실","completed":true},{"date":"2026-04-24","time":"18:30","away":"KT","home":"SSG","awayScore":0,"homeScore":5,"stadium":"문학","completed":true},{"date":"2026-04-24","time":"18:30","away":"롯데","home":"KIA","awayScore":0,"homeScore":4,"stadium":"광주","completed":true},{"date":"2026-04-24","time":"18:30","away":"NC","home":"한화","awayScore":7,"homeScore":3,"stadium":"대전","completed":true},{"date":"2026-04-24","time":"18:30","away":"삼성","home":"키움","awayScore":4,"homeScore":6,"stadium":"고척","completed":true},{"date":"2026-04-25","time":"14:00","away":"LG","home":"두산","awayScore":7,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-04-25","time":"17:00","away":"KT","home":"SSG","awayScore":1,"homeScore":3,"stadium":"문학","completed":true},{"date":"2026-04-25","time":"17:00","away":"롯데","home":"KIA","awayScore":3,"homeScore":4,"stadium":"광주","completed":true},{"date":"2026-04-25","time":"17:00","away":"NC","home":"한화","awayScore":1,"homeScore":8,"stadium":"대전","completed":true},{"date":"2026-04-25","time":"17:00","away":"삼성","home":"키움","awayScore":2,"homeScore":4,"stadium":"고척","completed":true},{"date":"2026-04-26","time":"14:00","away":"LG","home":"두산","awayScore":3,"homeScore":4,"stadium":"잠실","completed":true},{"date":"2026-04-26","time":"14:00","away":"KT","home":"SSG","awayScore":12,"homeScore":2,"stadium":"문학","completed":true},{"date":"2026-04-26","time":"14:00","away":"롯데","home":"KIA","awayScore":5,"homeScore":5,"stadium":"광주","completed":true},{"date":"2026-04-26","time":"14:00","away":"NC","home":"한화","awayScore":5,"homeScore":3,"stadium":"대전","completed":true},{"date":"2026-04-26","time":"14:00","away":"삼성","home":"키움","awayScore":0,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-04-28","time":"18:30","away":"삼성","home":"두산","awayScore":5,"homeScore":4,"stadium":"잠실","completed":true},{"date":"2026-04-28","time":"18:30","away":"키움","home":"롯데","awayScore":4,"homeScore":5,"stadium":"사직","completed":true},{"date":"2026-04-28","time":"18:30","away":"LG","home":"KT","awayScore":5,"homeScore":6,"stadium":"수원","completed":true},{"date":"2026-04-28","time":"18:30","away":"KIA","home":"NC","awayScore":4,"homeScore":5,"stadium":"창원","completed":true},{"date":"2026-04-28","time":"18:30","away":"SSG","home":"한화","awayScore":6,"homeScore":7,"stadium":"대전","completed":true},{"date":"2026-04-29","time":"18:30","away":"삼성","home":"두산","awayScore":0,"homeScore":4,"stadium":"잠실","completed":true},{"date":"2026-04-29","time":"18:30","away":"키움","home":"롯데","awayScore":6,"homeScore":5,"stadium":"사직","completed":true},{"date":"2026-04-29","time":"18:30","away":"LG","home":"KT","awayScore":4,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-04-29","time":"18:30","away":"KIA","home":"NC","awayScore":9,"homeScore":4,"stadium":"창원","completed":true},{"date":"2026-04-29","time":"18:30","away":"SSG","home":"한화","awayScore":6,"homeScore":1,"stadium":"대전","completed":true},{"date":"2026-04-30","time":"18:30","away":"삼성","home":"두산","awayScore":5,"homeScore":8,"stadium":"잠실","completed":true},{"date":"2026-04-30","time":"18:30","away":"키움","home":"롯데","awayScore":1,"homeScore":3,"stadium":"사직","completed":true},{"date":"2026-04-30","time":"18:30","away":"LG","home":"KT","awayScore":6,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-04-30","time":"18:30","away":"KIA","home":"NC","awayScore":2,"homeScore":7,"stadium":"창원","completed":true},{"date":"2026-04-30","time":"18:30","away":"SSG","home":"한화","awayScore":14,"homeScore":3,"stadium":"대전","completed":true},{"date":"2026-05-01","time":"17:00","away":"NC","home":"LG","awayScore":1,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-05-01","time":"17:00","away":"한화","home":"삼성","awayScore":3,"homeScore":4,"stadium":"대구","completed":true},{"date":"2026-05-01","time":"17:00","away":"롯데","home":"SSG","awayScore":10,"homeScore":7,"stadium":"문학","completed":true},{"date":"2026-05-01","time":"17:00","away":"KT","home":"KIA","awayScore":4,"homeScore":3,"stadium":"광주","completed":true},{"date":"2026-05-01","time":"17:00","away":"두산","home":"키움","awayScore":16,"homeScore":6,"stadium":"고척","completed":true},{"date":"2026-05-02","time":"14:00","away":"롯데","home":"SSG","awayScore":7,"homeScore":5,"stadium":"문학","completed":true},{"date":"2026-05-02","time":"17:00","away":"NC","home":"LG","awayScore":5,"homeScore":13,"stadium":"잠실","completed":true},{"date":"2026-05-02","time":"17:00","away":"한화","home":"삼성","awayScore":13,"homeScore":3,"stadium":"대구","completed":true},{"date":"2026-05-02","time":"17:00","away":"KT","home":"KIA","awayScore":0,"homeScore":6,"stadium":"광주","completed":true},{"date":"2026-05-02","time":"17:00","away":"두산","home":"키움","awayScore":2,"homeScore":4,"stadium":"고척","completed":true},{"date":"2026-05-03","time":"14:00","away":"NC","home":"LG","awayScore":10,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-05-03","time":"14:00","away":"한화","home":"삼성","awayScore":6,"homeScore":7,"stadium":"대구","completed":true},{"date":"2026-05-03","time":"14:00","away":"롯데","home":"SSG","awayScore":5,"homeScore":2,"stadium":"문학","completed":true},{"date":"2026-05-03","time":"14:00","away":"KT","home":"KIA","awayScore":6,"homeScore":4,"stadium":"광주","completed":true},{"date":"2026-05-03","time":"14:00","away":"두산","home":"키움","awayScore":14,"homeScore":3,"stadium":"고척","completed":true},{"date":"2026-05-05","time":"14:00","away":"두산","home":"LG","awayScore":1,"homeScore":2,"stadium":"잠실","completed":true},{"date":"2026-05-05","time":"14:00","away":"키움","home":"삼성","awayScore":1,"homeScore":11,"stadium":"대구","completed":true},{"date":"2026-05-05","time":"14:00","away":"NC","home":"SSG","awayScore":7,"homeScore":7,"stadium":"문학","completed":true},{"date":"2026-05-05","time":"14:00","away":"한화","home":"KIA","awayScore":7,"homeScore":12,"stadium":"광주","completed":true},{"date":"2026-05-05","time":"14:00","away":"롯데","home":"KT","awayScore":4,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-05-06","time":"18:30","away":"두산","home":"LG","awayScore":1,"homeScore":6,"stadium":"잠실","completed":true},{"date":"2026-05-06","time":"18:30","away":"키움","home":"삼성","awayScore":1,"homeScore":2,"stadium":"대구","completed":true},{"date":"2026-05-06","time":"18:30","away":"NC","home":"SSG","awayScore":6,"homeScore":7,"stadium":"문학","completed":true},{"date":"2026-05-06","time":"18:30","away":"한화","home":"KIA","awayScore":7,"homeScore":2,"stadium":"광주","completed":true},{"date":"2026-05-06","time":"18:30","away":"롯데","home":"KT","awayScore":8,"homeScore":1,"stadium":"수원","completed":true},{"date":"2026-05-07","time":"18:30","away":"두산","home":"LG","awayScore":3,"homeScore":2,"stadium":"잠실","completed":true},{"date":"2026-05-07","time":"18:30","away":"키움","home":"삼성","awayScore":0,"homeScore":6,"stadium":"대구","completed":true},{"date":"2026-05-07","time":"18:30","away":"NC","home":"SSG","awayScore":10,"homeScore":5,"stadium":"문학","completed":true},{"date":"2026-05-07","time":"18:30","away":"한화","home":"KIA","awayScore":11,"homeScore":8,"stadium":"광주","completed":true},{"date":"2026-05-08","time":"18:30","away":"SSG","home":"두산","awayScore":4,"homeScore":1,"stadium":"잠실","completed":true},{"date":"2026-05-08","time":"18:30","away":"KIA","home":"롯데","awayScore":8,"homeScore":2,"stadium":"사직","completed":true},{"date":"2026-05-08","time":"18:30","away":"삼성","home":"NC","awayScore":4,"homeScore":3,"stadium":"창원","completed":true},{"date":"2026-05-08","time":"18:30","away":"LG","home":"한화","awayScore":9,"homeScore":8,"stadium":"대전","completed":true},{"date":"2026-05-08","time":"18:30","away":"KT","home":"키움","awayScore":8,"homeScore":0,"stadium":"고척","completed":true},{"date":"2026-05-09","time":"14:00","away":"LG","home":"한화","awayScore":3,"homeScore":11,"stadium":"대전","completed":true},{"date":"2026-05-09","time":"17:00","away":"SSG","home":"두산","awayScore":4,"homeScore":9,"stadium":"잠실","completed":true},{"date":"2026-05-09","time":"17:00","away":"KIA","home":"롯데","awayScore":3,"homeScore":1,"stadium":"사직","completed":true},{"date":"2026-05-09","time":"17:00","away":"삼성","home":"NC","awayScore":5,"homeScore":4,"stadium":"창원","completed":true},{"date":"2026-05-09","time":"17:00","away":"KT","home":"키움","awayScore":6,"homeScore":6,"stadium":"고척","completed":true},{"date":"2026-05-10","time":"14:00","away":"SSG","home":"두산","awayScore":1,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-05-10","time":"14:00","away":"KIA","home":"롯데","awayScore":3,"homeScore":7,"stadium":"사직","completed":true},{"date":"2026-05-10","time":"14:00","away":"삼성","home":"NC","awayScore":11,"homeScore":1,"stadium":"창원","completed":true},{"date":"2026-05-10","time":"14:00","away":"LG","home":"한화","awayScore":3,"homeScore":9,"stadium":"대전","completed":true},{"date":"2026-05-10","time":"14:00","away":"KT","home":"키움","awayScore":1,"homeScore":5,"stadium":"고척","completed":true},{"date":"2026-05-12","time":"18:30","away":"삼성","home":"LG","awayScore":9,"homeScore":1,"stadium":"잠실","completed":true},{"date":"2026-05-12","time":"18:30","away":"NC","home":"롯데","awayScore":8,"homeScore":1,"stadium":"사직","completed":true},{"date":"2026-05-12","time":"18:30","away":"두산","home":"KIA","awayScore":5,"homeScore":1,"stadium":"광주","completed":true},{"date":"2026-05-12","time":"18:30","away":"SSG","home":"KT","awayScore":5,"homeScore":1,"stadium":"수원","completed":true},{"date":"2026-05-12","time":"18:30","away":"한화","home":"키움","awayScore":11,"homeScore":5,"stadium":"고척","completed":true},{"date":"2026-05-13","time":"18:30","away":"삼성","home":"LG","awayScore":3,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-05-13","time":"18:30","away":"NC","home":"롯데","awayScore":5,"homeScore":10,"stadium":"사직","completed":true},{"date":"2026-05-13","time":"18:30","away":"두산","home":"KIA","awayScore":2,"homeScore":9,"stadium":"광주","completed":true},{"date":"2026-05-13","time":"18:30","away":"SSG","home":"KT","awayScore":4,"homeScore":18,"stadium":"수원","completed":true},{"date":"2026-05-13","time":"18:30","away":"한화","home":"키움","awayScore":2,"homeScore":3,"stadium":"고척","completed":true},{"date":"2026-05-14","time":"18:30","away":"삼성","home":"LG","awayScore":9,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-05-14","time":"18:30","away":"NC","home":"롯데","awayScore":5,"homeScore":4,"stadium":"사직","completed":true},{"date":"2026-05-14","time":"18:30","away":"두산","home":"KIA","awayScore":3,"homeScore":5,"stadium":"광주","completed":true},{"date":"2026-05-14","time":"18:30","away":"SSG","home":"KT","awayScore":16,"homeScore":10,"stadium":"수원","completed":true},{"date":"2026-05-14","time":"18:30","away":"한화","home":"키움","awayScore":10,"homeScore":1,"stadium":"고척","completed":true},{"date":"2026-05-15","time":"18:30","away":"롯데","home":"두산","awayScore":6,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-05-15","time":"18:30","away":"KIA","home":"삼성","awayScore":5,"homeScore":4,"stadium":"대구","completed":true},{"date":"2026-05-15","time":"18:30","away":"LG","home":"SSG","awayScore":8,"homeScore":7,"stadium":"문학","completed":true},{"date":"2026-05-15","time":"18:30","away":"한화","home":"KT","awayScore":5,"homeScore":3,"stadium":"수원","completed":true},{"date":"2026-05-15","time":"18:30","away":"키움","home":"NC","awayScore":4,"homeScore":1,"stadium":"창원","completed":true},{"date":"2026-05-16","time":"14:00","away":"한화","home":"KT","awayScore":10,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-05-16","time":"17:00","away":"롯데","home":"두산","awayScore":9,"homeScore":10,"stadium":"잠실","completed":true},{"date":"2026-05-16","time":"17:00","away":"KIA","home":"삼성","awayScore":2,"homeScore":5,"stadium":"대구","completed":true},{"date":"2026-05-16","time":"17:00","away":"LG","home":"SSG","awayScore":3,"homeScore":4,"stadium":"문학","completed":true},{"date":"2026-05-16","time":"17:00","away":"키움","home":"NC","awayScore":2,"homeScore":9,"stadium":"창원","completed":true},{"date":"2026-05-17","time":"14:00","away":"롯데","home":"두산","awayScore":4,"homeScore":8,"stadium":"잠실","completed":true},{"date":"2026-05-17","time":"14:00","away":"KIA","home":"삼성","awayScore":16,"homeScore":7,"stadium":"대구","completed":true},{"date":"2026-05-17","time":"14:00","away":"LG","home":"SSG","awayScore":6,"homeScore":4,"stadium":"문학","completed":true},{"date":"2026-05-17","time":"14:00","away":"한화","home":"KT","awayScore":7,"homeScore":8,"stadium":"수원","completed":true},{"date":"2026-05-17","time":"14:00","away":"키움","home":"NC","awayScore":3,"homeScore":2,"stadium":"창원","completed":true},{"date":"2026-05-19","time":"18:30","away":"NC","home":"두산","awayScore":3,"homeScore":9,"stadium":"잠실","completed":true},{"date":"2026-05-19","time":"18:30","away":"LG","home":"KIA","awayScore":0,"homeScore":14,"stadium":"광주","completed":true},{"date":"2026-05-19","time":"18:30","away":"롯데","home":"한화","awayScore":6,"homeScore":4,"stadium":"대전","completed":true},{"date":"2026-05-19","time":"18:30","away":"SSG","home":"키움","awayScore":6,"homeScore":7,"stadium":"고척","completed":true},{"date":"2026-05-19","time":"18:30","away":"KT","home":"삼성","awayScore":2,"homeScore":10,"stadium":"포항","completed":true},{"date":"2026-05-20","time":"18:30","away":"SSG","home":"키움","awayScore":5,"homeScore":6,"stadium":"고척","completed":true},{"date":"2026-05-21","time":"18:30","away":"NC","home":"두산","awayScore":0,"homeScore":1,"stadium":"잠실","completed":true},{"date":"2026-05-21","time":"18:30","away":"LG","home":"KIA","awayScore":5,"homeScore":3,"stadium":"광주","completed":true},{"date":"2026-05-21","time":"18:30","away":"롯데","home":"한화","awayScore":8,"homeScore":2,"stadium":"대전","completed":true},{"date":"2026-05-21","time":"18:30","away":"SSG","home":"키움","awayScore":0,"homeScore":6,"stadium":"고척","completed":true},{"date":"2026-05-21","time":"18:30","away":"KT","home":"삼성","awayScore":5,"homeScore":8,"stadium":"포항","completed":true},{"date":"2026-05-22","time":"18:30","away":"키움","home":"LG","awayScore":7,"homeScore":0,"stadium":"잠실","completed":true},{"date":"2026-05-22","time":"18:30","away":"삼성","home":"롯데","awayScore":7,"homeScore":5,"stadium":"사직","completed":true},{"date":"2026-05-22","time":"18:30","away":"SSG","home":"KIA","awayScore":2,"homeScore":5,"stadium":"광주","completed":true},{"date":"2026-05-22","time":"18:30","away":"NC","home":"KT","awayScore":4,"homeScore":7,"stadium":"수원","completed":true},{"date":"2026-05-22","time":"18:30","away":"두산","home":"한화","awayScore":3,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-05-23","time":"14:00","away":"키움","home":"LG","awayScore":2,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-05-23","time":"17:00","away":"삼성","home":"롯데","awayScore":5,"homeScore":7,"stadium":"사직","completed":true},{"date":"2026-05-23","time":"17:00","away":"SSG","home":"KIA","awayScore":4,"homeScore":5,"stadium":"광주","completed":true},{"date":"2026-05-23","time":"17:00","away":"NC","home":"KT","awayScore":5,"homeScore":10,"stadium":"수원","completed":true},{"date":"2026-05-23","time":"17:00","away":"두산","home":"한화","awayScore":2,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-05-24","time":"14:00","away":"키움","home":"LG","awayScore":4,"homeScore":6,"stadium":"잠실","completed":true},{"date":"2026-05-24","time":"14:00","away":"삼성","home":"롯데","awayScore":10,"homeScore":0,"stadium":"사직","completed":true},{"date":"2026-05-24","time":"14:00","away":"SSG","home":"KIA","awayScore":2,"homeScore":3,"stadium":"광주","completed":true},{"date":"2026-05-24","time":"14:00","away":"NC","home":"KT","awayScore":8,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-05-24","time":"14:00","away":"두산","home":"한화","awayScore":2,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-05-26","time":"18:30","away":"KT","home":"두산","awayScore":6,"homeScore":0,"stadium":"잠실","completed":true},{"date":"2026-05-26","time":"18:30","away":"LG","home":"롯데","awayScore":2,"homeScore":1,"stadium":"사직","completed":true},{"date":"2026-05-26","time":"18:30","away":"KIA","home":"키움","awayScore":5,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-05-27","time":"18:30","away":"KT","home":"두산","awayScore":0,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-05-27","time":"18:30","away":"LG","home":"롯데","awayScore":8,"homeScore":6,"stadium":"사직","completed":true},{"date":"2026-05-27","time":"18:30","away":"삼성","home":"SSG","awayScore":4,"homeScore":1,"stadium":"문학","completed":true},{"date":"2026-05-27","time":"18:30","away":"한화","home":"NC","awayScore":4,"homeScore":6,"stadium":"창원","completed":true},{"date":"2026-05-27","time":"18:30","away":"KIA","home":"키움","awayScore":9,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-05-28","time":"18:30","away":"KT","home":"두산","awayScore":11,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-05-28","time":"18:30","away":"LG","home":"롯데","awayScore":5,"homeScore":8,"stadium":"사직","completed":true},{"date":"2026-05-28","time":"18:30","away":"삼성","home":"SSG","awayScore":10,"homeScore":1,"stadium":"문학","completed":true},{"date":"2026-05-28","time":"18:30","away":"한화","home":"NC","awayScore":18,"homeScore":7,"stadium":"창원","completed":true},{"date":"2026-05-28","time":"18:30","away":"KIA","home":"키움","awayScore":5,"homeScore":0,"stadium":"고척","completed":true},{"date":"2026-05-29","time":"18:30","away":"KIA","home":"LG","awayScore":2,"homeScore":12,"stadium":"잠실","completed":true},{"date":"2026-05-29","time":"18:30","away":"두산","home":"삼성","awayScore":9,"homeScore":7,"stadium":"대구","completed":true},{"date":"2026-05-29","time":"18:30","away":"롯데","home":"NC","awayScore":6,"homeScore":2,"stadium":"창원","completed":true},{"date":"2026-05-29","time":"18:30","away":"SSG","home":"한화","awayScore":3,"homeScore":4,"stadium":"대전","completed":true},{"date":"2026-05-29","time":"18:30","away":"KT","home":"키움","awayScore":7,"homeScore":1,"stadium":"고척","completed":true},{"date":"2026-05-30","time":"14:00","away":"두산","home":"삼성","awayScore":8,"homeScore":7,"stadium":"대구","completed":true},{"date":"2026-05-30","time":"17:00","away":"KIA","home":"LG","awayScore":1,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-05-30","time":"17:00","away":"롯데","home":"NC","awayScore":2,"homeScore":6,"stadium":"창원","completed":true},{"date":"2026-05-30","time":"17:00","away":"SSG","home":"한화","awayScore":10,"homeScore":13,"stadium":"대전","completed":true},{"date":"2026-05-30","time":"17:00","away":"KT","home":"키움","awayScore":8,"homeScore":7,"stadium":"고척","completed":true},{"date":"2026-05-31","time":"14:00","away":"KIA","home":"LG","awayScore":3,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-05-31","time":"14:00","away":"두산","home":"삼성","awayScore":4,"homeScore":9,"stadium":"대구","completed":true},{"date":"2026-05-31","time":"14:00","away":"롯데","home":"NC","awayScore":2,"homeScore":8,"stadium":"창원","completed":true},{"date":"2026-05-31","time":"14:00","away":"SSG","home":"한화","awayScore":2,"homeScore":6,"stadium":"대전","completed":true},{"date":"2026-05-31","time":"14:00","away":"KT","home":"키움","awayScore":5,"homeScore":1,"stadium":"고척","completed":true},{"date":"2026-06-02","time":"18:30","away":"한화","home":"두산","awayScore":3,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-06-02","time":"18:30","away":"NC","home":"삼성","awayScore":7,"homeScore":8,"stadium":"대구","completed":true},{"date":"2026-06-02","time":"18:30","away":"키움","home":"SSG","awayScore":12,"homeScore":6,"stadium":"문학","completed":true},{"date":"2026-06-02","time":"18:30","away":"롯데","home":"KIA","awayScore":4,"homeScore":5,"stadium":"광주","completed":true},{"date":"2026-06-02","time":"18:30","away":"LG","home":"KT","awayScore":10,"homeScore":1,"stadium":"수원","completed":true},{"date":"2026-06-03","time":"17:00","away":"한화","home":"두산","awayScore":3,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-06-03","time":"17:00","away":"NC","home":"삼성","awayScore":6,"homeScore":4,"stadium":"대구","completed":true},{"date":"2026-06-03","time":"17:00","away":"키움","home":"SSG","awayScore":4,"homeScore":5,"stadium":"문학","completed":true},{"date":"2026-06-03","time":"17:00","away":"롯데","home":"KIA","awayScore":8,"homeScore":3,"stadium":"광주","completed":true},{"date":"2026-06-03","time":"17:00","away":"LG","home":"KT","awayScore":6,"homeScore":7,"stadium":"수원","completed":true},{"date":"2026-06-04","time":"18:30","away":"한화","home":"두산","awayScore":1,"homeScore":3,"stadium":"잠실","completed":true},{"date":"2026-06-04","time":"18:30","away":"NC","home":"삼성","awayScore":6,"homeScore":3,"stadium":"대구","completed":true},{"date":"2026-06-04","time":"18:30","away":"키움","home":"SSG","awayScore":6,"homeScore":7,"stadium":"문학","completed":true},{"date":"2026-06-04","time":"18:30","away":"롯데","home":"KIA","awayScore":0,"homeScore":10,"stadium":"광주","completed":true},{"date":"2026-06-04","time":"18:30","away":"LG","home":"KT","awayScore":7,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-06-05","time":"18:30","away":"키움","home":"두산","awayScore":3,"homeScore":4,"stadium":"잠실","completed":true},{"date":"2026-06-05","time":"18:30","away":"한화","home":"롯데","awayScore":9,"homeScore":2,"stadium":"사직","completed":true},{"date":"2026-06-05","time":"18:30","away":"KT","home":"SSG","awayScore":5,"homeScore":6,"stadium":"문학","completed":true},{"date":"2026-06-05","time":"18:30","away":"삼성","home":"KIA","awayScore":2,"homeScore":5,"stadium":"광주","completed":true},{"date":"2026-06-05","time":"18:30","away":"LG","home":"NC","awayScore":5,"homeScore":4,"stadium":"창원","completed":true},{"date":"2026-06-06","time":"14:00","away":"KT","home":"SSG","awayScore":7,"homeScore":3,"stadium":"문학","completed":true},{"date":"2026-06-06","time":"17:00","away":"키움","home":"두산","awayScore":1,"homeScore":9,"stadium":"잠실","completed":true},{"date":"2026-06-06","time":"17:00","away":"한화","home":"롯데","awayScore":7,"homeScore":2,"stadium":"사직","completed":true},{"date":"2026-06-06","time":"17:00","away":"삼성","home":"KIA","awayScore":3,"homeScore":2,"stadium":"광주","completed":true},{"date":"2026-06-06","time":"17:00","away":"LG","home":"NC","awayScore":5,"homeScore":8,"stadium":"창원","completed":true},{"date":"2026-06-07","time":"17:00","away":"키움","home":"두산","awayScore":4,"homeScore":1,"stadium":"잠실","completed":true},{"date":"2026-06-07","time":"17:00","away":"한화","home":"롯데","awayScore":9,"homeScore":8,"stadium":"사직","completed":true},{"date":"2026-06-07","time":"17:00","away":"KT","home":"SSG","awayScore":0,"homeScore":7,"stadium":"문학","completed":true},{"date":"2026-06-07","time":"17:00","away":"삼성","home":"KIA","awayScore":6,"homeScore":7,"stadium":"광주","completed":true},{"date":"2026-06-07","time":"17:00","away":"LG","home":"NC","awayScore":6,"homeScore":7,"stadium":"창원","completed":true},{"date":"2026-06-09","time":"18:30","away":"SSG","home":"LG","awayScore":2,"homeScore":8,"stadium":"잠실","completed":true},{"date":"2026-06-09","time":"18:30","away":"두산","home":"롯데","awayScore":6,"homeScore":5,"stadium":"사직","completed":true},{"date":"2026-06-09","time":"18:30","away":"삼성","home":"KT","awayScore":2,"homeScore":5,"stadium":"수원","completed":true},{"date":"2026-06-09","time":"18:30","away":"KIA","home":"한화","awayScore":6,"homeScore":4,"stadium":"대전","completed":true},{"date":"2026-06-09","time":"18:30","away":"NC","home":"키움","awayScore":6,"homeScore":7,"stadium":"고척","completed":true},{"date":"2026-06-10","time":"18:30","away":"SSG","home":"LG","awayScore":6,"homeScore":8,"stadium":"잠실","completed":true},{"date":"2026-06-10","time":"18:30","away":"두산","home":"롯데","awayScore":1,"homeScore":3,"stadium":"사직","completed":true},{"date":"2026-06-10","time":"18:30","away":"삼성","home":"KT","awayScore":3,"homeScore":4,"stadium":"수원","completed":true},{"date":"2026-06-10","time":"18:30","away":"KIA","home":"한화","awayScore":3,"homeScore":4,"stadium":"대전","completed":true},{"date":"2026-06-10","time":"18:30","away":"NC","home":"키움","awayScore":4,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-06-11","time":"18:30","away":"SSG","home":"LG","awayScore":1,"homeScore":15,"stadium":"잠실","completed":true},{"date":"2026-06-11","time":"18:30","away":"두산","home":"롯데","awayScore":12,"homeScore":7,"stadium":"사직","completed":true},{"date":"2026-06-11","time":"18:30","away":"삼성","home":"KT","awayScore":8,"homeScore":1,"stadium":"수원","completed":true},{"date":"2026-06-11","time":"18:30","away":"KIA","home":"한화","awayScore":1,"homeScore":5,"stadium":"대전","completed":true},{"date":"2026-06-11","time":"18:30","away":"NC","home":"키움","awayScore":3,"homeScore":2,"stadium":"고척","completed":true},{"date":"2026-06-12","time":"18:30","away":"롯데","home":"LG","awayScore":16,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-06-12","time":"18:30","away":"SSG","home":"삼성","awayScore":5,"homeScore":3,"stadium":"대구","completed":true},{"date":"2026-06-12","time":"18:30","away":"두산","home":"KIA","awayScore":4,"homeScore":2,"stadium":"광주","completed":true},{"date":"2026-06-12","time":"18:30","away":"NC","home":"KT","awayScore":2,"homeScore":3,"stadium":"수원","completed":true},{"date":"2026-06-12","time":"18:30","away":"한화","home":"키움","awayScore":3,"homeScore":4,"stadium":"고척","completed":true},{"date":"2026-06-13","time":"17:00","away":"롯데","home":"LG","awayScore":3,"homeScore":5,"stadium":"잠실","completed":true},{"date":"2026-06-13","time":"17:00","away":"SSG","home":"삼성","awayScore":6,"homeScore":7,"stadium":"대구","completed":true},{"date":"2026-06-13","time":"17:00","away":"두산","home":"KIA","awayScore":1,"homeScore":2,"stadium":"광주","completed":true},{"date":"2026-06-13","time":"17:00","away":"NC","home":"KT","awayScore":9,"homeScore":11,"stadium":"수원","completed":true},{"date":"2026-06-13","time":"17:00","away":"한화","home":"키움","awayScore":1,"homeScore":3,"stadium":"고척","completed":true},{"date":"2026-06-14","time":"14:00","away":"한화","home":"키움","awayScore":2,"homeScore":3,"stadium":"고척","completed":true},{"date":"2026-06-14","time":"17:00","away":"롯데","home":"LG","awayScore":1,"homeScore":6,"stadium":"잠실","completed":true},{"date":"2026-06-14","time":"17:00","away":"SSG","home":"삼성","awayScore":8,"homeScore":10,"stadium":"대구","completed":true},{"date":"2026-06-14","time":"17:00","away":"두산","home":"KIA","awayScore":8,"homeScore":1,"stadium":"광주","completed":true},{"date":"2026-06-16","time":"18:30","away":"KT","home":"두산","awayScore":6,"homeScore":2,"stadium":"잠실","completed":true},{"date":"2026-06-16","time":"18:30","away":"키움","home":"삼성","awayScore":1,"homeScore":4,"stadium":"대구","completed":true},{"date":"2026-06-16","time":"18:30","away":"롯데","home":"SSG","awayScore":10,"homeScore":6,"stadium":"문학","completed":true},{"date":"2026-06-16","time":"18:30","away":"LG","home":"KIA","awayScore":8,"homeScore":2,"stadium":"광주","completed":true},{"date":"2026-06-16","time":"18:30","away":"한화","home":"NC","awayScore":5,"homeScore":6,"stadium":"창원","completed":true}];
+    const TEAM_FILTER_ORDER = ["LG","KT","삼성","KIA","두산","한화","NC","SSG","롯데","키움"];
+    const RECENT_GAME_LIMIT_PER_TEAM = 10;
+
+    const latestSorted = [...RANK_CHART_DATA.latest].sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      return a.team.localeCompare(b.team, 'ko');
+    });
+
+    document.getElementById('dateRange').textContent = `${RANK_CHART_DATA.seasonStart} ~ ${RANK_CHART_DATA.chartEndDate}`;
+    document.getElementById('officialDate').textContent = `공식 최신 순위: ${RANK_CHART_DATA.latestOfficialDate}`;
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getRecentGamesForTeams(teamList) {
+      const teams = teamList.length ? teamList : TEAM_FILTER_ORDER;
+      const gamesByKey = new Map();
+
+      teams.forEach(team => {
+        let count = 0;
+        for (let index = RECENT_GAMES.length - 1; index >= 0 && count < RECENT_GAME_LIMIT_PER_TEAM; index -= 1) {
+          const game = RECENT_GAMES[index];
+          if (game.away !== team && game.home !== team) continue;
+
+          const key = [game.date, game.time, game.away, game.home].join('|');
+          gamesByKey.set(key, game);
+          count += 1;
+        }
+      });
+
+      return [...gamesByKey.values()].sort((a, b) => {
+        const dateCompare = a.date.localeCompare(b.date);
+        if (dateCompare !== 0) return dateCompare;
+        const timeCompare = a.time.localeCompare(b.time);
+        if (timeCompare !== 0) return timeCompare;
+        return (a.away + a.home).localeCompare(b.away + b.home, 'ko');
+      });
+    }
+
+    function renderRecentResults(teamList) {
+      const showAll = teamList.length === 0;
+      const selected = new Set(teamList);
+      const filteredGames = getRecentGamesForTeams(teamList);
+      document.querySelectorAll('.rank-row').forEach(row => {
+        row.classList.toggle('selected', selected.has(row.dataset.team));
+        row.setAttribute('aria-selected', selected.has(row.dataset.team) ? 'true' : 'false');
+      });
+
+      const meta = document.getElementById('recentResultsMeta');
+      const table = document.getElementById('recentResultsTable');
+      const firstDate = filteredGames[0]?.date ?? '';
+      const lastDate = filteredGames[filteredGames.length - 1]?.date ?? '';
+      const label = showAll ? '전체' : teamList.join(', ');
+
+      meta.textContent = filteredGames.length
+        ? `${label} | 팀별 최근 ${RECENT_GAME_LIMIT_PER_TEAM}경기, ${firstDate} ~ ${lastDate} 표시 ${filteredGames.length}경기(중복 제외)`
+        : `${label} | 최근 완료 경기 없음`;
+
+      table.innerHTML = filteredGames.map(game => {
+        const isDraw = game.awayScore === game.homeScore;
+        const awayWon = game.awayScore > game.homeScore;
+        const result = isDraw ? '무승부' : `${awayWon ? game.away : game.home} 승`;
+
+        return `
+          <tr>
+            <td>${game.date}</td>
+            <td>${escapeHtml(game.time)}</td>
+            <td class="${awayWon ? 'winner' : ''}">${escapeHtml(game.away)}</td>
+            <td class="score-cell">${game.awayScore} - ${game.homeScore}</td>
+            <td class="${!isDraw && !awayWon ? 'winner' : ''}">${escapeHtml(game.home)}</td>
+            <td>${escapeHtml(game.stadium)}</td>
+            <td class="result-note">${result}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function updateRecentResults() {
+      const allCheckbox = document.getElementById('allTeamsCheckbox');
+      const teamCheckboxes = [...document.querySelectorAll('.rank-row .team-filter')];
+      const checkedTeams = teamCheckboxes
+        .filter(input => input.checked)
+        .map(input => input.value);
+
+      if (checkedTeams.length === 0) {
+        allCheckbox.checked = true;
+        renderRecentResults([]);
+        return;
+      }
+
+      allCheckbox.checked = false;
+      renderRecentResults(checkedTeams);
+    }
+
+    function setTeamChecked(row, checked) {
+      row.querySelector('.team-filter').checked = checked;
+      updateRecentResults();
+    }
+
+    function setSelectedTeam(team) {
+      document.querySelectorAll('.rank-row').forEach(row => {
+        row.querySelector('.team-filter').checked = row.dataset.team === team;
+      });
+      updateRecentResults();
+    }
+
+    document.getElementById('allTeamsCheckbox').addEventListener('change', event => {
+      if (event.target.checked) {
+        document.querySelectorAll('.rank-row .team-filter').forEach(input => {
+          input.checked = false;
+        });
+        renderRecentResults([]);
+      } else {
+        updateRecentResults();
+      }
+    });
+
+    document.querySelectorAll('.rank-row').forEach(row => {
+      const checkbox = row.querySelector('.team-filter');
+      checkbox.addEventListener('click', event => {
+        event.stopPropagation();
+      });
+      checkbox.addEventListener('change', updateRecentResults);
+
+      row.addEventListener('click', () => setTeamChecked(row, !checkbox.checked));
+      row.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          setTeamChecked(row, !checkbox.checked);
+        }
+      });
+    });
+
+    renderRecentResults([]);
+
+    const chart = new Chart(document.getElementById('rankChart'), {
+      type: 'line',
+      data: {
+        labels: RANK_CHART_DATA.labels,
+        datasets: RANK_CHART_DATA.datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 450 },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              usePointStyle: true,
+              pointStyle: 'line',
+              boxWidth: 28,
+              boxHeight: 8,
+              padding: 14,
+              color: '#1d2433',
+              font: { size: 12, weight: '600' }
+            }
+          },
+          tooltip: {
+            callbacks: {
+              title(items) {
+                return items.length ? items[0].label : '';
+              },
+              label(context) {
+                return `${context.dataset.label}: ${context.parsed.y}위`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { color: '#eef1f5' },
+            ticks: {
+              autoSkip: true,
+              maxTicksLimit: 12,
+              color: '#697386',
+              maxRotation: 0,
+              callback(value) {
+                const label = this.getLabelForValue(value);
+                return label.slice(5).replace('-', '/');
+              }
+            }
+          },
+          y: {
+            reverse: true,
+            min: 1,
+            max: 10,
+            grid: { color: '#e8edf3' },
+            ticks: {
+              stepSize: 1,
+              color: '#697386',
+              callback(value) { return `${value}위`; }
+            },
+            title: {
+              display: true,
+              text: '순위',
+              color: '#1d2433',
+              font: { size: 13, weight: '700' }
+            }
+          }
+        }
+      }
+    });
+
+    function setVisibility(predicate) {
+      chart.data.datasets.forEach((dataset, index) => {
+        chart.setDatasetVisibility(index, predicate(dataset, index));
+      });
+      chart.update();
+    }
+
+    document.getElementById('showAll').addEventListener('click', () => setVisibility(() => true));
+    document.getElementById('hideAll').addEventListener('click', () => setVisibility(() => false));
+    document.getElementById('showTop5').addEventListener('click', () => {
+      const topTeams = new Set(latestSorted.slice(0, 5).map(row => row.team));
+      setVisibility(dataset => topTeams.has(dataset.label));
+    });
+  </script>
+</body>
+</html>
