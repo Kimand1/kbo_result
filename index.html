@@ -244,6 +244,19 @@
       color: var(--muted);
     }
 
+    .date-cell {
+      vertical-align: middle;
+      font-weight: 700;
+    }
+
+    .weekday {
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .weekday-sat { color: #2563eb; }
+    .weekday-sun { color: #dc2626; }
+
     .team-cell {
       display: inline-flex;
       align-items: center;
@@ -573,6 +586,23 @@
         .replace(/'/g, '&#39;');
     }
 
+    function getWeekdayInfo(dateText) {
+      const [year, month, day] = dateText.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      const dayIndex = date.getDay();
+      const labels = ['일', '월', '화', '수', '목', '금', '토'];
+      const className = dayIndex === 0 ? 'weekday-sun' : dayIndex === 6 ? 'weekday-sat' : '';
+
+      return { label: labels[dayIndex], className };
+    }
+
+    function formatDateWithWeekday(dateText) {
+      const { label, className } = getWeekdayInfo(dateText);
+      const weekdayClass = ['weekday', className].filter(Boolean).join(' ');
+
+      return `${escapeHtml(dateText)} <span class="${weekdayClass}">(${label})</span>`;
+    }
+
     function getRecentGamesForTeams(teamList) {
       const teams = teamList.length ? teamList : TEAM_FILTER_ORDER;
       const gamesByKey = new Map();
@@ -617,20 +647,29 @@
         ? `${label} | 팀별 최근 ${RECENT_GAME_LIMIT_PER_TEAM}경기, ${firstDate} ~ ${lastDate} 표시 ${filteredGames.length}경기(중복 제외)`
         : `${label} | 최근 완료 경기 없음`;
 
-      table.innerHTML = filteredGames.map(game => {
+      const dateRowspans = filteredGames.reduce((counts, game) => {
+        counts.set(game.date, (counts.get(game.date) ?? 0) + 1);
+        return counts;
+      }, new Map());
+
+      table.innerHTML = filteredGames.map((game, index) => {
         const isDraw = game.awayScore === game.homeScore;
         const awayWon = game.awayScore > game.homeScore;
         const result = isDraw ? '무승부' : `${awayWon ? game.away : game.home} 승`;
+        const isFirstDateRow = index === 0 || filteredGames[index - 1].date !== game.date;
+        const dateCell = isFirstDateRow
+          ? `<td class="date-cell" rowspan="${dateRowspans.get(game.date)}">${formatDateWithWeekday(game.date)}</td>`
+          : '';
 
         return `
           <tr>
-            <td>${game.date}</td>
+            ${dateCell}
             <td>${escapeHtml(game.time)}</td>
             <td class="${awayWon ? 'winner' : ''}">${escapeHtml(game.away)}</td>
             <td class="score-cell">${game.awayScore} - ${game.homeScore}</td>
             <td class="${!isDraw && !awayWon ? 'winner' : ''}">${escapeHtml(game.home)}</td>
             <td>${escapeHtml(game.stadium)}</td>
-            <td class="result-note">${result}</td>
+            <td class="result-note">${escapeHtml(result)}</td>
           </tr>
         `;
       }).join('');
