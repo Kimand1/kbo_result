@@ -86,7 +86,7 @@
 
     .layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
+      grid-template-columns: minmax(0, 1fr);
       gap: 16px;
       align-items: stretch;
     }
@@ -113,7 +113,7 @@
     }
 
     .rank-panel {
-      padding: 16px;
+      padding: 16px 18px 18px;
     }
 
     .rank-panel h2,
@@ -189,6 +189,39 @@
     .matchup-table td {
       text-align: center;
     }
+
+    .rank-table {
+      min-width: 1040px;
+    }
+
+    .form-summary,
+    .streak-cell,
+    .runs-cell,
+    .run-diff-cell {
+      font-weight: 800;
+    }
+
+    .form-rate {
+      margin-left: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .form-sequence {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      min-width: max-content;
+      font-weight: 800;
+    }
+
+    .form-win { color: #2563eb; }
+    .form-draw { color: #111827; }
+    .form-loss { color: #dc2626; }
+    .run-diff-positive { color: #2563eb; }
+    .run-diff-negative { color: #dc2626; }
 
     .all-filter-label {
       display: inline-flex;
@@ -347,14 +380,15 @@
 
       <aside class="rank-panel">
         <h2>최신 순위</h2>
-        <table class="rank-table">
-          <thead>
-            <tr>
-              <th><label class="all-filter-label"><input class="team-filter" type="checkbox" id="allTeamsCheckbox" checked>전체</label></th>
-              <th>순위</th><th>팀</th><th>승</th><th>패</th><th>무</th><th>승률</th><th>게임차</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div class="table-wrap">
+          <table class="rank-table">
+            <thead>
+              <tr>
+                <th><label class="all-filter-label"><input class="team-filter" type="checkbox" id="allTeamsCheckbox" checked>전체</label></th>
+                <th>순위</th><th>팀</th><th>승</th><th>패</th><th>무</th><th>승률</th><th>게임차</th><th>최근 10경기</th><th>흐름</th><th>연속</th><th>총득점</th><th>총실점</th><th>득실</th>
+              </tr>
+            </thead>
+            <tbody>
 
           <tr class="rank-row" data-team="LG" tabindex="0" aria-label="LG 선택">
             <td><input class="team-filter" type="checkbox" value="LG" aria-label="LG 경기 보기"></td>
@@ -456,11 +490,12 @@
             <td>.388</td>
             <td>16.5</td>
           </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
         <p class="footnote">
           자료: <a href="https://www.koreabaseball.com/Record/TeamRank/GraphDaily.aspx" target="_blank" rel="noreferrer">KBO 팀별 순위변동 그래프</a><br>
-          Chart.js CDN을 사용하므로 인터넷 연결이 필요합니다.
+          최근 10경기, 흐름, 연속, 총득점, 총실점, 득실은 완료 경기 스코어 기준입니다. Chart.js CDN을 사용하므로 인터넷 연결이 필요합니다.
         </p>
       </aside>
     </section>
@@ -603,6 +638,125 @@
       return `${escapeHtml(dateText)} <span class="${weekdayClass}">(${label})</span>`;
     }
 
+    function getTeamGameLine(game, team) {
+      const isAway = game.away === team;
+      const teamScore = isAway ? game.awayScore : game.homeScore;
+      const opponentScore = isAway ? game.homeScore : game.awayScore;
+      const result = teamScore === opponentScore ? '무' : teamScore > opponentScore ? '승' : '패';
+
+      return {
+        result,
+        runsFor: teamScore,
+        runsAgainst: opponentScore,
+        runDiff: teamScore - opponentScore
+      };
+    }
+
+    function getRecentTeamGames(team, limit = RECENT_GAME_LIMIT_PER_TEAM) {
+      const games = [];
+
+      for (let index = RECENT_GAMES.length - 1; index >= 0 && games.length < limit; index -= 1) {
+        const game = RECENT_GAMES[index];
+        if (game.away === team || game.home === team) {
+          games.push(game);
+        }
+      }
+
+      return games.reverse();
+    }
+
+    function formatWinRate(wins, losses) {
+      const denominator = wins + losses;
+      if (denominator === 0) return '-';
+
+      return (wins / denominator).toFixed(3).replace(/^0/, '');
+    }
+
+    function getStreak(results) {
+      if (!results.length) return '-';
+
+      const latest = results[results.length - 1];
+      let count = 0;
+      for (let index = results.length - 1; index >= 0 && results[index] === latest; index -= 1) {
+        count += 1;
+      }
+
+      return `${count}${latest}`;
+    }
+
+    function getRunDiffClass(runDiff) {
+      if (runDiff > 0) return 'run-diff-positive';
+      if (runDiff < 0) return 'run-diff-negative';
+      return '';
+    }
+
+    function formatRunDiff(runDiff) {
+      return runDiff > 0 ? `+${runDiff}` : String(runDiff);
+    }
+
+    function getTeamRecentForm(team) {
+      const games = getRecentTeamGames(team);
+      const lines = games.map(game => getTeamGameLine(game, team));
+      const results = lines.map(line => line.result);
+      const wins = results.filter(result => result === '승').length;
+      const draws = results.filter(result => result === '무').length;
+      const losses = results.filter(result => result === '패').length;
+      const runsFor = lines.reduce((total, line) => total + line.runsFor, 0);
+      const runsAgainst = lines.reduce((total, line) => total + line.runsAgainst, 0);
+      const runDiff = lines.reduce((total, line) => total + line.runDiff, 0);
+
+      return {
+        wins,
+        draws,
+        losses,
+        winRate: formatWinRate(wins, losses),
+        results,
+        streak: getStreak(results),
+        runsFor,
+        runsAgainst,
+        runDiff,
+        runDiffClass: getRunDiffClass(runDiff)
+      };
+    }
+
+    function renderFormSummary(form) {
+      return [
+        `<span class="form-win">${form.wins}승</span>`,
+        `<span class="form-draw">${form.draws}무</span>`,
+        `<span class="form-loss">${form.losses}패</span>`
+      ].join('-');
+    }
+
+    function renderFormSequence(results) {
+      if (!results.length) return '-';
+
+      const classByResult = {
+        '승': 'form-win',
+        '무': 'form-draw',
+        '패': 'form-loss'
+      };
+
+      return results
+        .map(result => `<span class="${classByResult[result]}">${result}</span>`)
+        .join('');
+    }
+
+    function renderRankFormStats() {
+      document.querySelectorAll('.rank-row').forEach(row => {
+        row.querySelectorAll('.rank-extra-cell').forEach(cell => cell.remove());
+
+        const form = getTeamRecentForm(row.dataset.team);
+        row.insertAdjacentHTML('beforeend', `
+          <td class="rank-extra-cell"><span class="form-summary">${renderFormSummary(form)}</span><span class="form-rate">승률 ${escapeHtml(form.winRate)}</span></td>
+          <td class="rank-extra-cell"><span class="form-sequence">${renderFormSequence(form.results)}</span></td>
+          <td class="rank-extra-cell streak-cell">${escapeHtml(form.streak)}</td>
+          <td class="rank-extra-cell runs-cell">${escapeHtml(form.runsFor)}</td>
+          <td class="rank-extra-cell runs-cell">${escapeHtml(form.runsAgainst)}</td>
+          <td class="rank-extra-cell run-diff-cell ${form.runDiffClass}">${escapeHtml(formatRunDiff(form.runDiff))}</td>
+        `);
+      });
+    }
+
     function getRecentGamesForTeams(teamList) {
       const teams = teamList.length ? teamList : TEAM_FILTER_ORDER;
       const gamesByKey = new Map();
@@ -703,6 +857,8 @@
       });
       updateRecentResults();
     }
+
+    renderRankFormStats();
 
     document.getElementById('allTeamsCheckbox').addEventListener('change', event => {
       if (event.target.checked) {
