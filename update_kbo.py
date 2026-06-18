@@ -196,25 +196,27 @@ def build_rank_data(
     standings: list[dict[str, object]],
     latest_date: date,
     history: dict[str, dict[date, int]],
+    games: list[dict[str, object]],
 ) -> dict[str, object]:
-    labels = []
+    label_dates = []
     current = SEASON_START
     while current <= latest_date:
-        labels.append(current.isoformat())
+        label_dates.append(current)
         current += timedelta(days=1)
+    labels = [current.isoformat() for current in label_dates]
 
     datasets = []
+    ranks_by_team: dict[str, list[int]] = {}
     for team, points in history.items():
         ranks = []
         latest_rank = None
-        current = SEASON_START
-        while current <= latest_date:
+        for current in label_dates:
             if current in points:
                 latest_rank = points[current]
             if latest_rank is None:
                 raise RuntimeError(f"No starting rank found for {team}")
             ranks.append(latest_rank)
-            current += timedelta(days=1)
+        ranks_by_team[team] = ranks
         datasets.append(
             {
                 "label": team,
@@ -230,6 +232,77 @@ def build_rank_data(
             }
         )
 
+    games_by_date: dict[date, list[dict[str, object]]] = defaultdict(list)
+    for game in games:
+        games_by_date[date.fromisoformat(str(game["date"]))].append(game)
+
+    records = {team: {"wins": 0, "losses": 0, "draws": 0} for team in history}
+    games_behind_by_team = {team: [] for team in history}
+    for index, current in enumerate(label_dates):
+        for game in games_by_date[current]:
+            away = str(game["away"])
+            home = str(game["home"])
+            away_score = int(game["awayScore"])
+            home_score = int(game["homeScore"])
+            if away_score == home_score:
+                records[away]["draws"] += 1
+                records[home]["draws"] += 1
+            elif away_score > home_score:
+                records[away]["wins"] += 1
+                records[home]["losses"] += 1
+            else:
+                records[away]["losses"] += 1
+                records[home]["wins"] += 1
+
+        leaders = [
+            team for team, ranks in ranks_by_team.items() if ranks[index] == 1
+        ]
+        if not leaders:
+            raise RuntimeError(f"No first-place team found for {current.isoformat()}")
+        leader = max(
+            leaders,
+            key=lambda team: records[team]["wins"] - records[team]["losses"],
+        )
+        leader_record = records[leader]
+
+        for team in history:
+            if ranks_by_team[team][index] == 1:
+                games_behind = 0.0
+            else:
+                games_behind = (
+                    leader_record["wins"]
+                    - records[team]["wins"]
+                    + records[team]["losses"]
+                    - leader_record["losses"]
+                ) / 2
+            games_behind_by_team[team].append(max(0.0, games_behind))
+
+    games_behind_datasets = [
+        {
+            "label": team,
+            "borderColor": TEAM_COLORS[team],
+            "backgroundColor": TEAM_COLORS[team],
+            "data": games_behind_by_team[team],
+            "pointRadius": 0,
+            "pointHoverRadius": 5,
+            "borderWidth": 2,
+            "tension": 0.15,
+            "fill": False,
+            "spanGaps": True,
+        }
+        for team in history
+    ]
+
+    for row in standings:
+        team = str(row["team"])
+        standings_value = str(row["gamesBehind"])
+        expected = 0.0 if standings_value in {"", "-"} else float(standings_value)
+        actual = games_behind_by_team[team][-1]
+        if actual != expected:
+            raise RuntimeError(
+                f"Games behind for {team} is {actual}, standings show {expected}"
+            )
+
     return {
         "title": f"{SEASON} KBO 팀별 일별 순위",
         "generatedAtKst": datetime.now(ZoneInfo("Asia/Seoul")).strftime(
@@ -238,12 +311,13 @@ def build_rank_data(
         "sourcePage": BASE_URL + "/Record/TeamRank/GraphDaily.aspx",
         "sourceApi": BASE_URL + "/ws/Record.asmx/GetTeamRankDaily",
         "scheduleApi": BASE_URL + "/ws/Schedule.asmx/GetScheduleList",
-        "note": "무경기일은 직전 공식 순위를 유지해 일별 라벨을 채웠습니다.",
+        "note": "무경기일은 직전 공식 순위와 게임차를 유지해 일별 라벨을 채웠습니다.",
         "seasonStart": SEASON_START.isoformat(),
         "chartEndDate": latest_date.isoformat(),
         "latestOfficialDate": latest_date.isoformat(),
         "labels": labels,
         "datasets": datasets,
+        "gamesBehindDatasets": games_behind_datasets,
         "latest": [
             {
                 "team": row["team"],
@@ -412,7 +486,7 @@ def main() -> None:
     standings = parse_standings(standings_page)
     latest_date, history = fetch_rank_history(today_kst)
     games = fetch_games(latest_date)
-    rank_data = build_rank_data(standings, latest_date, history)
+    rank_data = build_rank_data(standings, latest_date, history, games)
 
     original = INDEX_PATH.read_text(encoding="utf-8")
     updated = update_html(original, standings, games, rank_data)
