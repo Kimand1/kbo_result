@@ -32,7 +32,7 @@
     }
 
     .page {
-      max-width: 1360px;
+      width: min(100%, 1360px);
       margin: 0 auto;
       padding: 28px 24px 36px;
     }
@@ -151,6 +151,9 @@
 
     .table-wrap {
       overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scrollbar-gutter: stable;
+      -webkit-overflow-scrolling: touch;
     }
 
     table {
@@ -192,6 +195,10 @@
 
     .rank-table {
       min-width: 1040px;
+    }
+
+    .results-panel table {
+      min-width: 720px;
     }
 
     .form-summary,
@@ -309,6 +316,10 @@
       vertical-align: middle;
     }
 
+    .matchup-table {
+      min-width: 980px;
+    }
+
     .matchup-table th:first-child,
     .matchup-table td:first-child {
       position: sticky;
@@ -344,12 +355,183 @@
 
     @media (max-width: 980px) {
       .page { padding: 20px 14px 28px; }
-      header { align-items: flex-start; flex-direction: column; }
-      .actions { justify-content: flex-start; min-width: 0; }
+      header { align-items: flex-start; flex-direction: column; gap: 14px; }
+      .actions { justify-content: flex-start; min-width: 0; width: 100%; }
+      button { min-height: 38px; }
       .layout { grid-template-columns: 1fr; }
       .chart-panel { min-height: 560px; padding: 14px; }
       .chart-wrap { height: 500px; }
       .section-heading { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (max-width: 720px) {
+      .page { padding: 16px 10px 24px; }
+      header { margin-bottom: 14px; }
+      h1 { font-size: 22px; }
+      .meta { font-size: 12px; gap: 5px 10px; }
+      .actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+      }
+      button {
+        width: 100%;
+        padding: 0 8px;
+        font-size: 12px;
+      }
+      .chart-panel { min-height: 430px; padding: 12px 8px 8px; }
+      .chart-wrap { height: 390px; }
+      .rank-panel,
+      .results-panel,
+      .matchup-panel {
+        padding: 14px 12px 16px;
+      }
+      .rank-panel h2,
+      .results-panel h2,
+      .matchup-panel h2 {
+        font-size: 15px;
+      }
+      .section-heading { gap: 8px; }
+      .section-meta,
+      .footnote {
+        font-size: 12px;
+      }
+      th,
+      td {
+        padding: 7px 6px;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .rank-panel .table-wrap {
+        overflow: visible;
+        scrollbar-gutter: auto;
+      }
+      .rank-table {
+        display: block;
+        min-width: 0;
+        width: 100%;
+        border-collapse: separate;
+        font-size: 12px;
+      }
+      .rank-table thead,
+      .rank-table thead tr {
+        display: block;
+      }
+      .rank-table thead {
+        margin-bottom: 8px;
+      }
+      .rank-table thead th {
+        display: none;
+      }
+      .rank-table thead th:first-child {
+        display: flex;
+        width: 100%;
+        padding: 0 0 8px;
+        border: 0;
+        text-align: left;
+      }
+      .rank-table thead .all-filter-label {
+        min-height: 32px;
+        padding: 0 8px;
+        border: 1px solid var(--soft-line);
+        border-radius: 6px;
+        background: #f8fafc;
+      }
+      .rank-table tbody {
+        display: grid;
+        gap: 8px;
+      }
+      .rank-table tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+        padding: 10px;
+        border: 1px solid var(--soft-line);
+        border-radius: 8px;
+        background: #fff;
+      }
+      .rank-table tbody tr.selected {
+        background: #e6efff;
+        box-shadow: inset 3px 0 0 var(--accent);
+      }
+      .rank-table td {
+        border: 0;
+        padding: 0;
+        white-space: normal;
+      }
+      .rank-table td:first-child {
+        order: 1;
+        flex: 0 0 22px;
+        width: 22px;
+        text-align: left;
+      }
+      .rank-table td:nth-child(2) {
+        order: 2;
+        flex: 0 0 auto;
+        width: auto;
+        color: var(--accent);
+        font-size: 15px;
+        font-weight: 800;
+        text-align: left;
+      }
+      .rank-table td:nth-child(3) {
+        order: 3;
+        flex: 1 1 120px;
+        min-width: 0;
+        font-size: 15px;
+        font-weight: 800;
+      }
+      .rank-table td:nth-child(n+4) {
+        order: 4;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 24px;
+        padding: 3px 6px;
+        border-radius: 5px;
+        background: #f6f7fa;
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 700;
+        text-align: left;
+      }
+      .rank-table td:nth-child(n+4)::before {
+        color: var(--muted);
+        font-weight: 700;
+      }
+      .rank-table td:nth-child(4)::before { content: "W"; }
+      .rank-table td:nth-child(5)::before { content: "L"; }
+      .rank-table td:nth-child(6)::before { content: "D"; }
+      .rank-table td:nth-child(7)::before { content: "Pct"; }
+      .rank-table td:nth-child(8)::before { content: "GB"; }
+      .rank-table td:nth-child(9)::before { content: "10G"; }
+      .rank-table td:nth-child(10)::before { content: "Form"; }
+      .rank-table td:nth-child(11)::before { content: "Streak"; }
+      .rank-table td:nth-child(12)::before { content: "RF"; }
+      .rank-table td:nth-child(13)::before { content: "RA"; }
+      .rank-table td:nth-child(14)::before { content: "Diff"; }
+      .rank-table .form-rate {
+        margin-left: 3px;
+        font-size: 10px;
+      }
+      .form-sequence {
+        gap: 1px;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .actions {
+        grid-template-columns: 1fr;
+      }
+      .chart-panel { min-height: 390px; }
+      .chart-wrap { height: 350px; }
+      .rank-panel,
+      .results-panel,
+      .matchup-panel {
+        padding: 12px 10px 14px;
+      }
     }
   </style>
 </head>
@@ -889,6 +1071,9 @@
 
     renderRecentResults([]);
 
+    const chartMobileQuery = window.matchMedia('(max-width: 720px)');
+    const chartCompactQuery = window.matchMedia('(max-width: 480px)');
+
     const chart = new Chart(document.getElementById('rankChart'), {
       type: 'line',
       data: {
@@ -902,15 +1087,15 @@
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: {
-            position: 'right',
+            position: chartMobileQuery.matches ? 'bottom' : 'right',
             labels: {
               usePointStyle: true,
               pointStyle: 'line',
-              boxWidth: 28,
-              boxHeight: 8,
-              padding: 14,
+              boxWidth: chartMobileQuery.matches ? 18 : 28,
+              boxHeight: chartMobileQuery.matches ? 6 : 8,
+              padding: chartMobileQuery.matches ? 8 : 14,
               color: '#1d2433',
-              font: { size: 12, weight: '600' }
+              font: { size: chartMobileQuery.matches ? 11 : 12, weight: '600' }
             }
           },
           tooltip: {
@@ -929,9 +1114,9 @@
             grid: { color: '#eef1f5' },
             ticks: {
               autoSkip: true,
-              maxTicksLimit: 12,
+              maxTicksLimit: chartCompactQuery.matches ? 5 : chartMobileQuery.matches ? 7 : 12,
               color: '#697386',
-              maxRotation: 0,
+              maxRotation: chartCompactQuery.matches ? 35 : 0,
               callback(value) {
                 const label = this.getLabelForValue(value);
                 return label.slice(5).replace('-', '/');
@@ -949,7 +1134,7 @@
               callback(value) { return `${value}위`; }
             },
             title: {
-              display: true,
+              display: !chartMobileQuery.matches,
               text: '순위',
               color: '#1d2433',
               font: { size: 13, weight: '700' }
@@ -957,6 +1142,31 @@
           }
         }
       }
+    });
+
+    function syncChartLayout() {
+      const isMobile = chartMobileQuery.matches;
+      const isCompact = chartCompactQuery.matches;
+      const legend = chart.options.plugins.legend;
+
+      legend.position = isMobile ? 'bottom' : 'right';
+      legend.labels.boxWidth = isMobile ? 18 : 28;
+      legend.labels.boxHeight = isMobile ? 6 : 8;
+      legend.labels.padding = isMobile ? 8 : 14;
+      legend.labels.font.size = isMobile ? 11 : 12;
+      chart.options.scales.x.ticks.maxTicksLimit = isCompact ? 5 : isMobile ? 7 : 12;
+      chart.options.scales.x.ticks.maxRotation = isCompact ? 35 : 0;
+      chart.options.scales.y.title.display = !isMobile;
+      chart.update('none');
+    }
+
+    let chartResizeFrame = 0;
+    window.addEventListener('resize', () => {
+      if (chartResizeFrame) cancelAnimationFrame(chartResizeFrame);
+      chartResizeFrame = requestAnimationFrame(() => {
+        chartResizeFrame = 0;
+        syncChartLayout();
+      });
     });
 
     function setVisibility(predicate) {
