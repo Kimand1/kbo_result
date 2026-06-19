@@ -37,6 +37,9 @@ REQUEST_HEADERS = {
     "X-Requested-With": "XMLHttpRequest",
 }
 
+GAME_LIST_SERIES = "0,1,3,4,5,6,7,8,9"
+WEEKDAY_NAMES = ("월", "화", "수", "목", "금", "토", "일")
+
 
 def request_text(path: str) -> str:
     request = urllib.request.Request(BASE_URL + path, headers=REQUEST_HEADERS)
@@ -190,6 +193,173 @@ def fetch_games(end_date: date) -> list[dict[str, object]]:
 
     games.sort(key=lambda game: (game["date"], game["time"], game["stadium"]))
     return games
+
+
+def fetch_game_list(game_date: date) -> list[dict[str, object]]:
+    response = post_json(
+        "/ws/Main.asmx/GetKboGameList",
+        {
+            "leId": "1",
+            "srId": GAME_LIST_SERIES,
+            "date": game_date.strftime("%Y%m%d"),
+        },
+        f"/Schedule/GameCenter/Main.aspx?gameDate={game_date.strftime('%Y%m%d')}",
+    )
+    if response.get("code") != "100":
+        raise RuntimeError(f"KBO game list API failed for {game_date}: {response}")
+
+    return [
+        game
+        for game in response.get("game", [])
+        if int(game.get("SR_ID", -1)) == 0
+    ]
+
+
+def fetch_next_games(start_date: date) -> list[dict[str, object]]:
+    for offset in range(15):
+        game_date = start_date + timedelta(days=offset)
+        scheduled = [
+            game
+            for game in fetch_game_list(game_date)
+            if str(game.get("GAME_STATE_SC")) == "1"
+            and str(game.get("CANCEL_SC_ID")) == "0"
+        ]
+        if not scheduled:
+            continue
+
+        next_games = []
+        for game in scheduled:
+            game_id = str(game["G_ID"])
+            next_games.append(
+                {
+                    "date": game_date.isoformat(),
+                    "time": clean_cell(str(game.get("G_TM") or "")),
+                    "stadium": clean_cell(str(game.get("S_NM") or "")),
+                    "away": clean_cell(str(game.get("AWAY_NM") or "")),
+                    "home": clean_cell(str(game.get("HOME_NM") or "")),
+                    "awayStarter": clean_cell(str(game.get("T_PIT_P_NM") or "")),
+                    "homeStarter": clean_cell(str(game.get("B_PIT_P_NM") or "")),
+                    "gameId": game_id,
+                    "previewUrl": (
+                        BASE_URL
+                        + "/Schedule/GameCenter/Main.aspx?"
+                        + urllib.parse.urlencode(
+                            {
+                                "gameDate": game_date.strftime("%Y%m%d"),
+                                "gameId": game_id,
+                                "section": "START_PIT",
+                            }
+                        )
+                    ),
+                }
+            )
+        return sorted(
+            next_games,
+            key=lambda game: (str(game["time"]), str(game["stadium"])),
+        )
+
+    return []
+
+
+def fetch_relief_appearances(
+    game: dict[str, object],
+) -> dict[str, dict[str, dict[str, str]]]:
+    game_id = str(game["G_ID"])
+    response = post_json(
+        "/ws/Schedule.asmx/GetBoxScoreScroll",
+        {
+            "leId": "1",
+            "srId": "0",
+            "seasonId": str(SEASON),
+            "gameId": game_id,
+        },
+        (
+            "/Schedule/GameCenter/Main.aspx?"
+            + urllib.parse.urlencode(
+                {
+                    "gameDate": game_id[:8],
+                    "gameId": game_id,
+                    "section": "REVIEW",
+                }
+            )
+        ),
+    )
+    if response.get("code") != "100":
+        raise RuntimeError(f"KBO box score API failed for {game_id}: {response}")
+
+    team_names = [
+        clean_cell(str(game.get("AWAY_NM") or "")),
+        clean_cell(str(game.get("HOME_NM") or "")),
+    ]
+    pitcher_tables = response.get("arrPitcher", [])
+    if len(pitcher_tables) != 2:
+        raise RuntimeError(
+            f"Expected two pitcher tables for {game_id}, found {len(pitcher_tables)}"
+        )
+
+    appearances: dict[str, dict[str, dict[str, str]]] = {
+        team: {} for team in team_names
+    }
+    for team, pitcher_table in zip(team_names, pitcher_tables):
+        table = json.loads(pitcher_table["table"])
+        for row_data in table.get("rows", []):
+            cells = [
+                clean_cell(str(cell.get("Text") or ""))
+                for cell in row_data.get("row", [])
+            ]
+            if len(cells) < 9 or cells[1] == "선발":
+                continue
+            appearances[team][cells[0]] = {
+                "innings": cells[6],
+                "pitches": cells[8],
+            }
+    return appearances
+
+
+def fetch_two_day_relievers(latest_date: date) -> dict[str, object]:
+    first_date = latest_date - timedelta(days=1)
+    appearances_by_date: dict[
+        date, dict[str, dict[str, dict[str, str]]]
+    ] = {
+        first_date: {team: {} for team in TEAM_COLORS},
+        latest_date: {team: {} for team in TEAM_COLORS},
+    }
+
+    for game_date in (first_date, latest_date):
+        completed_games = [
+            game
+            for game in fetch_game_list(game_date)
+            if str(game.get("GAME_STATE_SC")) == "3"
+            and int(game.get("GAME_RESULT_CK", 0)) == 1
+        ]
+        for game in completed_games:
+            for team, appearances in fetch_relief_appearances(game).items():
+                appearances_by_date[game_date][team].update(appearances)
+
+    teams: dict[str, list[dict[str, str]]] = {}
+    for team in TEAM_COLORS:
+        first_appearances = appearances_by_date[first_date][team]
+        latest_appearances = appearances_by_date[latest_date][team]
+        repeated_names = sorted(
+            set(first_appearances) & set(latest_appearances),
+            key=lambda name: name,
+        )
+        teams[team] = [
+            {
+                "name": name,
+                "firstInnings": first_appearances[name]["innings"],
+                "firstPitches": first_appearances[name]["pitches"],
+                "latestInnings": latest_appearances[name]["innings"],
+                "latestPitches": latest_appearances[name]["pitches"],
+            }
+            for name in repeated_names
+        ]
+
+    return {
+        "firstDate": first_date.isoformat(),
+        "latestDate": latest_date.isoformat(),
+        "teams": teams,
+    }
 
 
 def build_rank_data(
@@ -422,6 +592,114 @@ def build_matchups(
     return header, "".join(body_rows)
 
 
+def build_next_games_section(
+    next_games: list[dict[str, object]],
+    two_day_relievers: dict[str, object],
+) -> str:
+    first_date = str(two_day_relievers["firstDate"])
+    latest_date = str(two_day_relievers["latestDate"])
+    team_relievers = two_day_relievers["teams"]
+
+    cards = []
+    for game in next_games:
+        game_date = date.fromisoformat(str(game["date"]))
+        date_label = (
+            f"{game_date.isoformat()} ({WEEKDAY_NAMES[game_date.weekday()]})"
+        )
+        team_blocks = []
+        for side, team, starter in (
+            ("원정", str(game["away"]), str(game["awayStarter"])),
+            ("홈", str(game["home"]), str(game["homeStarter"])),
+        ):
+            relievers = team_relievers.get(team, [])
+            if relievers:
+                reliever_html = "".join(
+                    (
+                        '<span class="bullpen-chip" '
+                        f'title="{html.escape(first_date)} '
+                        f'{html.escape(str(reliever["firstInnings"]))}이닝 '
+                        f'{html.escape(str(reliever["firstPitches"]))}구, '
+                        f'{html.escape(latest_date)} '
+                        f'{html.escape(str(reliever["latestInnings"]))}이닝 '
+                        f'{html.escape(str(reliever["latestPitches"]))}구">'
+                        f'{html.escape(str(reliever["name"]))}'
+                        '<small>'
+                        f'{html.escape(str(reliever["firstPitches"]))}구'
+                        "→"
+                        f'{html.escape(str(reliever["latestPitches"]))}구'
+                        "</small></span>"
+                    )
+                    for reliever in relievers
+                )
+            else:
+                reliever_html = '<span class="bullpen-none">없음</span>'
+
+            starter_name = starter or "미발표"
+            team_blocks.append(
+                f'''
+            <div class="next-team" style="--team-color:{TEAM_COLORS[team]}">
+              <div class="next-team-heading">
+                <span class="game-side">{side}</span>
+                <strong>{html.escape(team)}</strong>
+              </div>
+              <dl class="game-detail-list">
+                <div>
+                  <dt>예고 선발</dt>
+                  <dd>{html.escape(starter_name)}</dd>
+                </div>
+                <div>
+                  <dt>2연투 불펜</dt>
+                  <dd class="bullpen-list">{reliever_html}</dd>
+                </div>
+              </dl>
+            </div>'''
+            )
+
+        cards.append(
+            f'''
+        <article class="next-game-card">
+          <div class="next-game-meta">
+            <strong>{date_label} {html.escape(str(game["time"]))}</strong>
+            <span>{html.escape(str(game["stadium"]))}</span>
+          </div>
+          <div class="next-matchup" aria-label="{html.escape(str(game["away"]))} 대 {html.escape(str(game["home"]))}">
+            <strong>{html.escape(str(game["away"]))}</strong>
+            <span>vs</span>
+            <strong>{html.escape(str(game["home"]))}</strong>
+          </div>
+          <div class="next-team-grid">
+{"".join(team_blocks)}
+          </div>
+          <a class="preview-link" href="{html.escape(str(game["previewUrl"]))}" target="_blank" rel="noreferrer">KBO 프리뷰</a>
+        </article>'''
+        )
+
+    if next_games:
+        next_date = str(next_games[0]["date"])
+        grid = f'<div class="next-games-grid">{"".join(cards)}</div>'
+        meta = f"{next_date} 예정 경기 · 예고 선발은 KBO 등록 기준"
+    else:
+        grid = '<p class="empty-next-games">향후 14일 내 예정된 정규시즌 경기가 없습니다.</p>'
+        meta = "예정 경기 없음"
+
+    return f'''<!-- NEXT_GAMES_START -->
+    <section class="next-games-panel" aria-labelledby="nextGamesTitle">
+      <div class="section-heading">
+        <div>
+          <h2 id="nextGamesTitle">다음 경기 일정 · 예고 선발 · 2연투 불펜</h2>
+          <p class="section-meta">{meta}</p>
+        </div>
+      </div>
+      {grid}
+      <p class="footnote">
+        2연투 불펜은 {first_date}와 {latest_date} 양일 모두 공식 박스스코어에 구원 등판한 투수입니다.
+        이름 옆 숫자는 두 날짜의 투구수입니다. 출처:
+        <a href="{BASE_URL}/Schedule/GameCenter/Main.aspx" target="_blank" rel="noreferrer">KBO 게임센터</a>
+      </p>
+    </section>
+    <!-- NEXT_GAMES_END -->'''
+
+
 def replace_exactly_once(text: str, pattern: str, replacement: str) -> str:
     updated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
     if count != 1:
@@ -434,6 +712,8 @@ def update_html(
     standings: list[dict[str, object]],
     games: list[dict[str, object]],
     rank_data: dict[str, object],
+    next_games: list[dict[str, object]],
+    two_day_relievers: dict[str, object],
 ) -> str:
     latest_date = str(rank_data["latestOfficialDate"])
     page = replace_exactly_once(
@@ -454,6 +734,11 @@ def update_html(
         f"{latest_date} 완료 경기 기준",
         page,
         count=1,
+    )
+    page = replace_exactly_once(
+        page,
+        r"<!-- NEXT_GAMES_START -->.*?<!-- NEXT_GAMES_END -->",
+        build_next_games_section(next_games, two_day_relievers),
     )
 
     compact_json = lambda value: json.dumps(
@@ -487,13 +772,25 @@ def main() -> None:
     latest_date, history = fetch_rank_history(today_kst)
     games = fetch_games(latest_date)
     rank_data = build_rank_data(standings, latest_date, history, games)
+    next_games = fetch_next_games(today_kst)
+    two_day_relievers = fetch_two_day_relievers(latest_date)
 
     original = INDEX_PATH.read_text(encoding="utf-8")
-    updated = update_html(original, standings, games, rank_data)
+    updated = update_html(
+        original,
+        standings,
+        games,
+        rank_data,
+        next_games,
+        two_day_relievers,
+    )
     INDEX_PATH.write_text(updated, encoding="utf-8")
+    next_games_summary = (
+        f", next games on {next_games[0]['date']}" if next_games else ""
+    )
     print(
         f"Updated {INDEX_PATH.name} through {latest_date.isoformat()}: "
-        f"{len(games)} completed games"
+        f"{len(games)} completed games{next_games_summary}"
     )
 
 
