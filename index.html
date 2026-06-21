@@ -127,6 +127,73 @@
       line-height: 1.3;
     }
 
+    .chart-heading-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px 20px;
+      margin-bottom: 10px;
+    }
+
+    .chart-heading-row .chart-title {
+      flex: 0 0 auto;
+      margin: 7px 0 0;
+    }
+
+    .date-range-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px 8px;
+    }
+
+    .date-range-controls label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .date-range-controls input[type="date"] {
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 0 8px;
+      font: inherit;
+      font-size: 12px;
+    }
+
+    .date-range-controls input[type="date"]:focus {
+      border-color: var(--accent);
+      outline: 2px solid rgba(37, 87, 167, 0.16);
+      outline-offset: 1px;
+    }
+
+    .date-range-separator {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .quick-range-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px 8px;
+    }
+
+    .date-range-summary {
+      flex-basis: 100%;
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+      text-align: right;
+    }
+
     .chart-wrap {
       position: relative;
       height: 540px;
@@ -538,6 +605,31 @@
       .layout { grid-template-columns: 1fr; }
       .chart-panel { padding: 14px; }
       .chart-wrap { height: 470px; }
+      .chart-heading-row { flex-direction: column; align-items: stretch; }
+      .chart-heading-row .chart-title { margin-top: 0; }
+      .date-range-controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        width: 100%;
+      }
+      .date-range-controls label {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        min-width: 0;
+      }
+      .date-range-controls input[type="date"] { min-width: 0; width: 100%; }
+      .quick-range-buttons {
+        display: grid;
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 6px;
+      }
+      .quick-range-buttons button {
+        min-width: 0;
+        padding: 0 5px;
+        font-size: 11px;
+      }
+      .date-range-summary { grid-column: 1 / -1; text-align: left; }
       .section-heading { align-items: flex-start; flex-direction: column; }
       .next-games-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
@@ -560,6 +652,8 @@
       .chart-panel { padding: 12px 8px 8px; }
       .chart-wrap { height: 390px; }
       .chart-title { margin-left: 4px; font-size: 15px; }
+      .date-range-controls { padding: 0 4px; }
+      .date-range-controls input[type="date"] { height: 38px; }
       .rank-panel,
       .results-panel,
       .matchup-panel,
@@ -745,7 +839,28 @@
           </div>
         </div>
         <div class="chart-block">
-          <h2 class="chart-title">1위와의 게임차</h2>
+          <div class="chart-heading-row">
+            <h2 class="chart-title">1위와의 게임차</h2>
+            <div class="date-range-controls" role="group" aria-label="1위와의 게임차 표시 기간">
+              <label>
+                시작
+                <input type="date" id="gamesBehindStartDate" aria-label="게임차 그래프 시작일">
+              </label>
+              <span class="date-range-separator" aria-hidden="true">~</span>
+              <label>
+                종료
+                <input type="date" id="gamesBehindEndDate" aria-label="게임차 그래프 종료일">
+              </label>
+              <div class="quick-range-buttons">
+                <button type="button" id="showRecent10Days">최근 10일</button>
+                <button type="button" data-range-months="1">한달</button>
+                <button type="button" data-range-months="2">두달</button>
+                <button type="button" data-range-months="3">세달</button>
+                <button type="button" id="showFullGamesBehindRange">전체 기간</button>
+              </div>
+              <p class="date-range-summary" id="gamesBehindRangeSummary" aria-live="polite"></p>
+            </div>
+          </div>
           <div class="chart-wrap">
             <canvas id="gamesBehindChart" aria-label="2026 KBO 팀별 1위와의 일별 게임차 꺾은선 그래프"></canvas>
           </div>
@@ -1514,10 +1629,40 @@
 
     const chartMobileQuery = window.matchMedia('(max-width: 720px)');
     const chartCompactQuery = window.matchMedia('(max-width: 480px)');
-    const gamesBehindMax = Math.max(
+    const gamesBehindStartDate = document.getElementById('gamesBehindStartDate');
+    const gamesBehindEndDate = document.getElementById('gamesBehindEndDate');
+    const gamesBehindRangeSummary = document.getElementById('gamesBehindRangeSummary');
+    const gamesBehindCanvas = document.getElementById('gamesBehindChart');
+    const gamesBehindDefaultStartIndex = Math.max(0, RANK_CHART_DATA.labels.length - 10);
+    const gamesBehindInitialLabels = RANK_CHART_DATA.labels.slice(gamesBehindDefaultStartIndex);
+    const gamesBehindInitialDatasets = RANK_CHART_DATA.gamesBehindDatasets.map(dataset => ({
+      ...dataset,
+      data: dataset.data.slice(gamesBehindDefaultStartIndex)
+    }));
+    const gamesBehindInitialMax = Math.max(
       1,
-      Math.ceil(Math.max(...RANK_CHART_DATA.gamesBehindDatasets.flatMap(dataset => dataset.data)))
+      Math.ceil(Math.max(...gamesBehindInitialDatasets.flatMap(dataset => dataset.data)))
     );
+
+    [gamesBehindStartDate, gamesBehindEndDate].forEach(input => {
+      input.min = RANK_CHART_DATA.seasonStart;
+      input.max = RANK_CHART_DATA.chartEndDate;
+    });
+    gamesBehindStartDate.value = gamesBehindInitialLabels[0];
+    gamesBehindEndDate.value = gamesBehindInitialLabels[gamesBehindInitialLabels.length - 1];
+
+    function updateGamesBehindRangeSummary(labels) {
+      const firstDate = labels[0];
+      const lastDate = labels[labels.length - 1];
+      gamesBehindRangeSummary.textContent = `${firstDate} ~ ${lastDate} · ${labels.length}일`;
+      gamesBehindCanvas.setAttribute(
+        'aria-label',
+        `2026 KBO 팀별 1위와의 게임차 꺾은선 그래프, ${firstDate}부터 ${lastDate}까지`
+      );
+    }
+
+    updateGamesBehindRangeSummary(gamesBehindInitialLabels);
+
     let chart;
     let gamesBehindChart;
 
@@ -1605,8 +1750,8 @@
     gamesBehindChart = new Chart(document.getElementById('gamesBehindChart'), {
       type: 'line',
       data: {
-        labels: RANK_CHART_DATA.labels,
-        datasets: RANK_CHART_DATA.gamesBehindDatasets
+        labels: gamesBehindInitialLabels,
+        datasets: gamesBehindInitialDatasets
       },
       options: {
         responsive: true,
@@ -1655,7 +1800,7 @@
           y: {
             reverse: true,
             min: 0,
-            max: gamesBehindMax,
+            max: gamesBehindInitialMax,
             grid: { color: '#e8edf3' },
             ticks: {
               stepSize: 1,
@@ -1671,6 +1816,94 @@
           }
         }
       }
+    });
+
+    function setGamesBehindDateRange(startDate, endDate, changedInput = '') {
+      let startIndex = RANK_CHART_DATA.labels.indexOf(startDate);
+      let endIndex = RANK_CHART_DATA.labels.indexOf(endDate);
+
+      if (startIndex < 0) startIndex = 0;
+      if (endIndex < 0) endIndex = RANK_CHART_DATA.labels.length - 1;
+
+      if (startIndex > endIndex) {
+        if (changedInput === 'start') {
+          endIndex = startIndex;
+        } else {
+          startIndex = endIndex;
+        }
+      }
+
+      const labels = RANK_CHART_DATA.labels.slice(startIndex, endIndex + 1);
+      gamesBehindStartDate.value = labels[0];
+      gamesBehindEndDate.value = labels[labels.length - 1];
+      gamesBehindChart.data.labels = labels;
+      gamesBehindChart.data.datasets.forEach((dataset, index) => {
+        dataset.data = RANK_CHART_DATA.gamesBehindDatasets[index].data.slice(
+          startIndex,
+          endIndex + 1
+        );
+      });
+      gamesBehindChart.options.scales.y.max = Math.max(
+        1,
+        Math.ceil(Math.max(...gamesBehindChart.data.datasets.flatMap(dataset => dataset.data)))
+      );
+      updateGamesBehindRangeSummary(labels);
+      gamesBehindChart.update();
+    }
+
+    gamesBehindStartDate.addEventListener('change', () => {
+      setGamesBehindDateRange(
+        gamesBehindStartDate.value,
+        gamesBehindEndDate.value,
+        'start'
+      );
+    });
+    gamesBehindEndDate.addEventListener('change', () => {
+      setGamesBehindDateRange(
+        gamesBehindStartDate.value,
+        gamesBehindEndDate.value,
+        'end'
+      );
+    });
+    document.getElementById('showRecent10Days').addEventListener('click', () => {
+      const startIndex = Math.max(0, RANK_CHART_DATA.labels.length - 10);
+      setGamesBehindDateRange(
+        RANK_CHART_DATA.labels[startIndex],
+        RANK_CHART_DATA.labels[RANK_CHART_DATA.labels.length - 1]
+      );
+    });
+    document.querySelectorAll('[data-range-months]').forEach(button => {
+      button.addEventListener('click', () => {
+        const months = Number(button.dataset.rangeMonths);
+        const endDate = new Date(`${RANK_CHART_DATA.chartEndDate}T00:00:00Z`);
+        const targetMonth = endDate.getUTCMonth() - months;
+        const targetYear = endDate.getUTCFullYear() + Math.floor(targetMonth / 12);
+        const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+        const lastDayOfTargetMonth = new Date(Date.UTC(
+          targetYear,
+          normalizedMonth + 1,
+          0
+        )).getUTCDate();
+        const startDate = new Date(Date.UTC(
+          targetYear,
+          normalizedMonth,
+          Math.min(endDate.getUTCDate(), lastDayOfTargetMonth)
+        ));
+        startDate.setUTCDate(startDate.getUTCDate() + 1);
+        const requestedStart = startDate.toISOString().slice(0, 10);
+        setGamesBehindDateRange(
+          requestedStart < RANK_CHART_DATA.seasonStart
+            ? RANK_CHART_DATA.seasonStart
+            : requestedStart,
+          RANK_CHART_DATA.chartEndDate
+        );
+      });
+    });
+    document.getElementById('showFullGamesBehindRange').addEventListener('click', () => {
+      setGamesBehindDateRange(
+        RANK_CHART_DATA.labels[0],
+        RANK_CHART_DATA.labels[RANK_CHART_DATA.labels.length - 1]
+      );
     });
 
     function syncChartLayout() {
