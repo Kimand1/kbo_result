@@ -9,15 +9,15 @@ import re
 import urllib.parse
 import urllib.request
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 
 BASE_URL = "https://www.koreabaseball.com"
 SEASON = 2026
 SEASON_START = date(SEASON, 3, 28)
 INDEX_PATH = Path(__file__).with_name("index.html")
+KST = timezone(timedelta(hours=9), name="KST")
 
 TEAM_COLORS = {
     "LG": "#f92776",
@@ -475,7 +475,7 @@ def build_rank_data(
 
     return {
         "title": f"{SEASON} KBO 팀별 일별 순위",
-        "generatedAtKst": datetime.now(ZoneInfo("Asia/Seoul")).strftime(
+        "generatedAtKst": datetime.now(KST).strftime(
             "%Y-%m-%d %H:%M:%S"
         ),
         "sourcePage": BASE_URL + "/Record/TeamRank/GraphDaily.aspx",
@@ -766,7 +766,7 @@ def lambda_match(*parts: str) -> str:
 
 
 def main() -> None:
-    today_kst = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    today_kst = datetime.now(KST).date()
     standings_page = request_text("/Record/TeamRank/TeamRank.aspx")
     standings = parse_standings(standings_page)
     latest_date, history = fetch_rank_history(today_kst)
