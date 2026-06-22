@@ -1112,7 +1112,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>올러</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1128,7 +1128,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>박준현</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1159,7 +1159,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>타카다</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1175,7 +1175,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>류현진</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1206,7 +1206,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>라일리</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1222,7 +1222,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>박세웅</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1253,7 +1253,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>김건우</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1269,7 +1269,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>고영표</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1300,7 +1300,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>최원태</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1316,7 +1316,7 @@
               <dl class="game-detail-list">
                 <div>
                   <dt>예고 선발</dt>
-                  <dd>미발표</dd>
+                  <dd>장현식</dd>
                 </div>
                 <div>
                   <dt>2연투 불펜</dt>
@@ -1633,7 +1633,34 @@
     const gamesBehindEndDate = document.getElementById('gamesBehindEndDate');
     const gamesBehindRangeSummary = document.getElementById('gamesBehindRangeSummary');
     const gamesBehindCanvas = document.getElementById('gamesBehindChart');
-    const gamesBehindDefaultStartIndex = Math.max(0, RANK_CHART_DATA.labels.length - 10);
+
+    function getGamesBehindRangeStartDate(months) {
+      const endDate = new Date(`${RANK_CHART_DATA.chartEndDate}T00:00:00Z`);
+      const targetMonth = endDate.getUTCMonth() - months;
+      const targetYear = endDate.getUTCFullYear() + Math.floor(targetMonth / 12);
+      const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+      const lastDayOfTargetMonth = new Date(Date.UTC(
+        targetYear,
+        normalizedMonth + 1,
+        0
+      )).getUTCDate();
+      const startDate = new Date(Date.UTC(
+        targetYear,
+        normalizedMonth,
+        Math.min(endDate.getUTCDate(), lastDayOfTargetMonth)
+      ));
+      startDate.setUTCDate(startDate.getUTCDate() + 1);
+      const requestedStart = startDate.toISOString().slice(0, 10);
+      return requestedStart < RANK_CHART_DATA.seasonStart
+        ? RANK_CHART_DATA.seasonStart
+        : requestedStart;
+    }
+
+    const gamesBehindDefaultStartDate = getGamesBehindRangeStartDate(1);
+    const gamesBehindDefaultStartIndex = Math.max(
+      0,
+      RANK_CHART_DATA.labels.indexOf(gamesBehindDefaultStartDate)
+    );
     const gamesBehindInitialLabels = RANK_CHART_DATA.labels.slice(gamesBehindDefaultStartIndex);
     const gamesBehindInitialDatasets = RANK_CHART_DATA.gamesBehindDatasets.map(dataset => ({
       ...dataset,
@@ -1875,26 +1902,8 @@
     document.querySelectorAll('[data-range-months]').forEach(button => {
       button.addEventListener('click', () => {
         const months = Number(button.dataset.rangeMonths);
-        const endDate = new Date(`${RANK_CHART_DATA.chartEndDate}T00:00:00Z`);
-        const targetMonth = endDate.getUTCMonth() - months;
-        const targetYear = endDate.getUTCFullYear() + Math.floor(targetMonth / 12);
-        const normalizedMonth = ((targetMonth % 12) + 12) % 12;
-        const lastDayOfTargetMonth = new Date(Date.UTC(
-          targetYear,
-          normalizedMonth + 1,
-          0
-        )).getUTCDate();
-        const startDate = new Date(Date.UTC(
-          targetYear,
-          normalizedMonth,
-          Math.min(endDate.getUTCDate(), lastDayOfTargetMonth)
-        ));
-        startDate.setUTCDate(startDate.getUTCDate() + 1);
-        const requestedStart = startDate.toISOString().slice(0, 10);
         setGamesBehindDateRange(
-          requestedStart < RANK_CHART_DATA.seasonStart
-            ? RANK_CHART_DATA.seasonStart
-            : requestedStart,
+          getGamesBehindRangeStartDate(months),
           RANK_CHART_DATA.chartEndDate
         );
       });
