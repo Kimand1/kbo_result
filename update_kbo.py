@@ -316,7 +316,21 @@ def fetch_relief_appearances(
     return appearances
 
 
-def fetch_two_day_relievers(latest_date: date) -> dict[str, object]:
+def pitch_count_value(value: object) -> int:
+    match = re.search(r"\d+", str(value).replace(",", ""))
+    return int(match.group()) if match else 0
+
+
+def fetch_completed_games(game_date: date) -> list[dict[str, object]]:
+    return [
+        game
+        for game in fetch_game_list(game_date)
+        if str(game.get("GAME_STATE_SC")) == "3"
+        and int(game.get("GAME_RESULT_CK", 0)) == 1
+    ]
+
+
+def fetch_bullpen_alerts(latest_date: date) -> dict[str, object]:
     first_date = latest_date - timedelta(days=1)
     appearances_by_date: dict[
         date, dict[str, dict[str, dict[str, str]]]
@@ -324,36 +338,94 @@ def fetch_two_day_relievers(latest_date: date) -> dict[str, object]:
         first_date: {team: {} for team in TEAM_COLORS},
         latest_date: {team: {} for team in TEAM_COLORS},
     }
+    appearances_by_game: dict[str, dict[str, dict[str, dict[str, str]]]] = {}
+
+    def get_relief_appearances(
+        game: dict[str, object],
+    ) -> dict[str, dict[str, dict[str, str]]]:
+        game_id = str(game["G_ID"])
+        if game_id not in appearances_by_game:
+            appearances_by_game[game_id] = fetch_relief_appearances(game)
+        return appearances_by_game[game_id]
 
     for game_date in (first_date, latest_date):
-        completed_games = [
-            game
-            for game in fetch_game_list(game_date)
-            if str(game.get("GAME_STATE_SC")) == "3"
-            and int(game.get("GAME_RESULT_CK", 0)) == 1
-        ]
-        for game in completed_games:
-            for team, appearances in fetch_relief_appearances(game).items():
+        for game in fetch_completed_games(game_date):
+            for team, appearances in get_relief_appearances(game).items():
                 appearances_by_date[game_date][team].update(appearances)
 
-    teams: dict[str, list[dict[str, str]]] = {}
+    last_game_by_team: dict[str, dict[str, object] | None] = {
+        team: None for team in TEAM_COLORS
+    }
+    search_date = latest_date
+    stop_date = max(SEASON_START, latest_date - timedelta(days=15))
+    while search_date >= stop_date and any(
+        game is None for game in last_game_by_team.values()
+    ):
+        completed_games = sorted(
+            fetch_completed_games(search_date),
+            key=lambda game: (
+                str(game.get("G_TM") or ""),
+                str(game.get("S_NM") or ""),
+                str(game.get("G_ID") or ""),
+            ),
+            reverse=True,
+        )
+        for game in completed_games:
+            game_appearances = get_relief_appearances(game)
+            for team in (
+                clean_cell(str(game.get("AWAY_NM") or "")),
+                clean_cell(str(game.get("HOME_NM") or "")),
+            ):
+                if team in last_game_by_team and last_game_by_team[team] is None:
+                    last_game_by_team[team] = {
+                        "date": search_date.isoformat(),
+                        "appearances": game_appearances.get(team, {}),
+                    }
+        search_date -= timedelta(days=1)
+
+    teams: dict[str, list[dict[str, object]]] = {}
     for team in TEAM_COLORS:
         first_appearances = appearances_by_date[first_date][team]
         latest_appearances = appearances_by_date[latest_date][team]
-        repeated_names = sorted(
-            set(first_appearances) & set(latest_appearances),
-            key=lambda name: name,
-        )
-        teams[team] = [
-            {
+        consecutive_names = set(first_appearances) & set(latest_appearances)
+        last_game = last_game_by_team[team] or {
+            "date": "",
+            "appearances": {},
+        }
+        last_game_appearances = last_game["appearances"]
+        heavy_names = {
+            name
+            for name, appearance in last_game_appearances.items()
+            if pitch_count_value(appearance["pitches"]) >= 30
+        }
+
+        alerts = []
+        for name in sorted(consecutive_names | heavy_names, key=lambda name: name):
+            alert = {
                 "name": name,
-                "firstInnings": first_appearances[name]["innings"],
-                "firstPitches": first_appearances[name]["pitches"],
-                "latestInnings": latest_appearances[name]["innings"],
-                "latestPitches": latest_appearances[name]["pitches"],
+                "consecutive": name in consecutive_names,
+                "heavyLastGame": name in heavy_names,
             }
-            for name in repeated_names
-        ]
+            if name in consecutive_names:
+                alert.update(
+                    {
+                        "firstInnings": first_appearances[name]["innings"],
+                        "firstPitches": first_appearances[name]["pitches"],
+                        "latestInnings": latest_appearances[name]["innings"],
+                        "latestPitches": latest_appearances[name]["pitches"],
+                    }
+                )
+            if name in heavy_names:
+                last_appearance = last_game_appearances[name]
+                alert.update(
+                    {
+                        "lastGameDate": str(last_game["date"]),
+                        "lastGameInnings": last_appearance["innings"],
+                        "lastGamePitches": last_appearance["pitches"],
+                    }
+                )
+            alerts.append(alert)
+        teams[team] = alerts
 
     return {
         "firstDate": first_date.isoformat(),
@@ -594,11 +666,11 @@ def build_matchups(
 
 def build_next_games_section(
     next_games: list[dict[str, object]],
-    two_day_relievers: dict[str, object],
+    bullpen_alerts: dict[str, object],
 ) -> str:
-    first_date = str(two_day_relievers["firstDate"])
-    latest_date = str(two_day_relievers["latestDate"])
-    team_relievers = two_day_relievers["teams"]
+    first_date = str(bullpen_alerts["firstDate"])
+    latest_date = str(bullpen_alerts["latestDate"])
+    team_relievers = bullpen_alerts["teams"]
 
     cards = []
     for game in next_games:
@@ -614,21 +686,7 @@ def build_next_games_section(
             relievers = team_relievers.get(team, [])
             if relievers:
                 reliever_html = "".join(
-                    (
-                        '<span class="bullpen-chip" '
-                        f'title="{html.escape(first_date)} '
-                        f'{html.escape(str(reliever["firstInnings"]))}이닝 '
-                        f'{html.escape(str(reliever["firstPitches"]))}구, '
-                        f'{html.escape(latest_date)} '
-                        f'{html.escape(str(reliever["latestInnings"]))}이닝 '
-                        f'{html.escape(str(reliever["latestPitches"]))}구">'
-                        f'{html.escape(str(reliever["name"]))}'
-                        '<small>'
-                        f'{html.escape(str(reliever["firstPitches"]))}구'
-                        "→"
-                        f'{html.escape(str(reliever["latestPitches"]))}구'
-                        "</small></span>"
-                    )
+                    build_bullpen_alert_chip(reliever, first_date, latest_date)
                     for reliever in relievers
                 )
             else:
@@ -648,7 +706,7 @@ def build_next_games_section(
                   <dd>{html.escape(starter_name)}</dd>
                 </div>
                 <div>
-                  <dt>2연투 불펜</dt>
+                  <dt>연투·30구 불펜</dt>
                   <dd class="bullpen-list">{reliever_html}</dd>
                 </div>
               </dl>
@@ -686,18 +744,50 @@ def build_next_games_section(
     <section class="next-games-panel" aria-labelledby="nextGamesTitle">
       <div class="section-heading">
         <div>
-          <h2 id="nextGamesTitle">다음 경기 일정 · 예고 선발 · 2연투 불펜</h2>
+          <h2 id="nextGamesTitle">다음 경기 일정 · 예고 선발 · 불펜 체크</h2>
           <p class="section-meta">{meta}</p>
         </div>
       </div>
       {grid}
       <p class="footnote">
-        2연투 불펜은 {first_date}와 {latest_date} 양일 모두 공식 박스스코어에 구원 등판한 투수입니다.
-        이름 옆 숫자는 두 날짜의 투구수입니다. 출처:
+        불펜 체크는 {first_date}와 {latest_date} 일자 모두 공식 박스스코어에 구원 등판한 투수와,
+        연투 여부와 무관하게 해당 팀 전경기에 30구 이상 던진 구원 투수를 표시합니다. 출처:
         <a href="{BASE_URL}/Schedule/GameCenter/Main.aspx" target="_blank" rel="noreferrer">KBO 게임센터</a>
       </p>
     </section>
     <!-- NEXT_GAMES_END -->'''
+
+
+def build_bullpen_alert_chip(
+    reliever: dict[str, object],
+    first_date: str,
+    latest_date: str,
+) -> str:
+    title_parts = []
+    small_parts = []
+    if reliever.get("consecutive"):
+        title_parts.append(
+            f'2연투: {first_date} '
+            f'{reliever["firstInnings"]}이닝 {reliever["firstPitches"]}구, '
+            f'{latest_date} '
+            f'{reliever["latestInnings"]}이닝 {reliever["latestPitches"]}구'
+        )
+        small_parts.append("2연투")
+    if reliever.get("heavyLastGame"):
+        title_parts.append(
+            f'전경기 30구+: {reliever["lastGameDate"]} '
+            f'{reliever["lastGameInnings"]}이닝 {reliever["lastGamePitches"]}구'
+        )
+        small_parts.append(f'{reliever["lastGamePitches"]}구')
+
+    title = " / ".join(title_parts)
+    small = " · ".join(small_parts)
+    return (
+        '<span class="bullpen-chip" '
+        f'title="{html.escape(title)}">'
+        f'{html.escape(str(reliever["name"]))}'
+        f'<small>{html.escape(small)}</small></span>'
+    )
 
 
 def replace_exactly_once(text: str, pattern: str, replacement: str) -> str:
@@ -713,7 +803,7 @@ def update_html(
     games: list[dict[str, object]],
     rank_data: dict[str, object],
     next_games: list[dict[str, object]],
-    two_day_relievers: dict[str, object],
+    bullpen_alerts: dict[str, object],
 ) -> str:
     latest_date = str(rank_data["latestOfficialDate"])
     page = replace_exactly_once(
@@ -738,7 +828,7 @@ def update_html(
     page = replace_exactly_once(
         page,
         r"<!-- NEXT_GAMES_START -->.*?<!-- NEXT_GAMES_END -->",
-        build_next_games_section(next_games, two_day_relievers),
+        build_next_games_section(next_games, bullpen_alerts),
     )
 
     compact_json = lambda value: json.dumps(
@@ -773,7 +863,7 @@ def main() -> None:
     games = fetch_games(latest_date)
     rank_data = build_rank_data(standings, latest_date, history, games)
     next_games = fetch_next_games(today_kst)
-    two_day_relievers = fetch_two_day_relievers(latest_date)
+    bullpen_alerts = fetch_bullpen_alerts(latest_date)
 
     original = INDEX_PATH.read_text(encoding="utf-8")
     updated = update_html(
@@ -782,7 +872,7 @@ def main() -> None:
         games,
         rank_data,
         next_games,
-        two_day_relievers,
+        bullpen_alerts,
     )
     INDEX_PATH.write_text(updated, encoding="utf-8")
     next_games_summary = (
