@@ -480,6 +480,7 @@ def build_rank_data(
 
     records = {team: {"wins": 0, "losses": 0, "draws": 0} for team in history}
     games_behind_by_team = {team: [] for team in history}
+    win_loss_margin_by_team = {team: [] for team in history}
     for index, current in enumerate(label_dates):
         for game in games_by_date[current]:
             away = str(game["away"])
@@ -508,6 +509,9 @@ def build_rank_data(
         leader_record = records[leader]
 
         for team in history:
+            win_loss_margin_by_team[team].append(
+                records[team]["wins"] - records[team]["losses"]
+            )
             if ranks_by_team[team][index] == 1:
                 games_behind = 0.0
             else:
@@ -535,6 +539,22 @@ def build_rank_data(
         for team in history
     ]
 
+    win_loss_margin_datasets = [
+        {
+            "label": team,
+            "borderColor": TEAM_COLORS[team],
+            "backgroundColor": TEAM_COLORS[team],
+            "data": win_loss_margin_by_team[team],
+            "pointRadius": 0,
+            "pointHoverRadius": 5,
+            "borderWidth": 2,
+            "tension": 0.15,
+            "fill": False,
+            "spanGaps": True,
+        }
+        for team in history
+    ]
+
     for row in standings:
         team = str(row["team"])
         standings_value = str(row["gamesBehind"])
@@ -543,6 +563,13 @@ def build_rank_data(
         if actual != expected:
             raise RuntimeError(
                 f"Games behind for {team} is {actual}, standings show {expected}"
+            )
+        expected_margin = int(row["wins"]) - int(row["losses"])
+        actual_margin = win_loss_margin_by_team[team][-1]
+        if actual_margin != expected_margin:
+            raise RuntimeError(
+                f"Win-loss margin for {team} is {actual_margin}, "
+                f"standings show {expected_margin}"
             )
 
     return {
@@ -553,13 +580,14 @@ def build_rank_data(
         "sourcePage": BASE_URL + "/Record/TeamRank/GraphDaily.aspx",
         "sourceApi": BASE_URL + "/ws/Record.asmx/GetTeamRankDaily",
         "scheduleApi": BASE_URL + "/ws/Schedule.asmx/GetScheduleList",
-        "note": "무경기일은 직전 공식 순위와 게임차를 유지해 일별 라벨을 채웠습니다.",
+        "note": "무경기일은 직전 공식 순위, 게임차, 승패 마진을 유지해 일별 라벨을 채웠습니다.",
         "seasonStart": SEASON_START.isoformat(),
         "chartEndDate": latest_date.isoformat(),
         "latestOfficialDate": latest_date.isoformat(),
         "labels": labels,
         "datasets": datasets,
         "gamesBehindDatasets": games_behind_datasets,
+        "winLossMarginDatasets": win_loss_margin_datasets,
         "latest": [
             {
                 "team": row["team"],
