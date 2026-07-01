@@ -175,7 +175,16 @@ def fetch_games(end_date: date) -> list[dict[str, object]]:
             if len(game_parts) != 5:
                 continue
             away, away_score, versus, home_score, home = game_parts
-            if versus != "vs" or not away_score.isdigit() or not home_score.isdigit():
+            relay_html = str(cells[offset + 2].get("Text") or "")
+            has_review = re.search(
+                r"\bid\s*=\s*(['\"])btnReview\1", relay_html, re.IGNORECASE
+            )
+            if (
+                versus != "vs"
+                or not away_score.isdigit()
+                or not home_score.isdigit()
+                or not has_review
+            ):
                 continue
 
             games.append(
