@@ -900,7 +900,22 @@ def main() -> None:
     games = fetch_games(latest_date)
     rank_data = build_rank_data(standings, latest_date, history, games)
     next_games = fetch_next_games(today_kst)
-    bullpen_alerts = fetch_bullpen_alerts(latest_date)
+    bullpen_date = latest_date
+    while bullpen_date >= SEASON_START:
+        try:
+            bullpen_alerts = fetch_bullpen_alerts(bullpen_date)
+            break
+        except RuntimeError as error:
+            if "KBO box score API failed" not in str(error):
+                raise
+            bullpen_date -= timedelta(days=1)
+    else:
+        raise RuntimeError("No completed KBO box scores were available")
+    if bullpen_date != latest_date:
+        print(
+            "Latest box scores are not available yet; "
+            f"using bullpen data through {bullpen_date.isoformat()}"
+        )
 
     original = INDEX_PATH.read_text(encoding="utf-8")
     updated = update_html(
