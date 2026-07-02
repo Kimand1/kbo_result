@@ -17,6 +17,7 @@ BASE_URL = "https://www.koreabaseball.com"
 SEASON = 2026
 SEASON_START = date(SEASON, 3, 28)
 INDEX_PATH = Path(__file__).with_name("index.html")
+VERSION_PATH = Path(__file__).with_name("version.json")
 KST = timezone(timedelta(hours=9), name="KST")
 
 TEAM_COLORS = {
@@ -843,6 +844,12 @@ def update_html(
     bullpen_alerts: dict[str, object],
 ) -> str:
     latest_date = str(rank_data["latestOfficialDate"])
+    generated_at_kst = str(rank_data["generatedAtKst"])
+    page = replace_exactly_once(
+        page,
+        r'(<meta name="kbo-data-version" content=")[^"]*(">)',
+        lambda_match(r"\g<1>", generated_at_kst, r"\g<2>"),
+    )
     page = replace_exactly_once(
         page,
         r'(<table class="rank-table">.*?<tbody>)\s*.*?(\s*</tbody>)',
@@ -927,6 +934,18 @@ def main() -> None:
         bullpen_alerts,
     )
     INDEX_PATH.write_text(updated, encoding="utf-8")
+    VERSION_PATH.write_text(
+        json.dumps(
+            {
+                "version": rank_data["generatedAtKst"],
+                "latestOfficialDate": rank_data["latestOfficialDate"],
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     next_games_summary = (
         f", next games on {next_games[0]['date']}" if next_games else ""
     )
