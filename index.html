@@ -1462,11 +1462,16 @@
     }
 
     function getStreak(results) {
-      if (!results.length) return '-';
+      const decisiveResults = results.filter(result => result !== '무');
+      if (!decisiveResults.length) return '-';
 
-      const latest = results[results.length - 1];
+      const latest = decisiveResults[decisiveResults.length - 1];
       let count = 0;
-      for (let index = results.length - 1; index >= 0 && results[index] === latest; index -= 1) {
+      for (
+        let index = decisiveResults.length - 1;
+        index >= 0 && decisiveResults[index] === latest;
+        index -= 1
+      ) {
         count += 1;
       }
 
