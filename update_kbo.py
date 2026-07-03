@@ -340,6 +340,43 @@ def fetch_completed_games(game_date: date) -> list[dict[str, object]]:
     ]
 
 
+def consecutive_pitcher_names(
+    first_date: date,
+    latest_date: date,
+    first_appearances: dict[str, object],
+    latest_appearances: dict[str, object],
+) -> set[str]:
+    """Return pitchers who appeared on two consecutive calendar dates."""
+    if latest_date - first_date != timedelta(days=1):
+        return set()
+    return set(first_appearances) & set(latest_appearances)
+
+
+def bullpen_alert_for_game(
+    reliever: dict[str, object],
+    game_date: date,
+    latest_date: date,
+) -> dict[str, object] | None:
+    """Keep bullpen warnings only when the team plays the next calendar day."""
+    alert = dict(reliever)
+    alert["consecutive"] = bool(reliever.get("consecutive")) and (
+        game_date - latest_date == timedelta(days=1)
+    )
+
+    last_game_date = None
+    last_game_date_value = str(reliever.get("lastGameDate") or "")
+    if last_game_date_value:
+        last_game_date = date.fromisoformat(last_game_date_value)
+    alert["heavyLastGame"] = bool(reliever.get("heavyLastGame")) and (
+        last_game_date is not None
+        and game_date - last_game_date == timedelta(days=1)
+    )
+
+    if not alert["consecutive"] and not alert["heavyLastGame"]:
+        return None
+    return alert
+
+
 def fetch_bullpen_alerts(latest_date: date) -> dict[str, object]:
     first_date = latest_date - timedelta(days=1)
     appearances_by_date: dict[
@@ -397,7 +434,12 @@ def fetch_bullpen_alerts(latest_date: date) -> dict[str, object]:
     for team in TEAM_COLORS:
         first_appearances = appearances_by_date[first_date][team]
         latest_appearances = appearances_by_date[latest_date][team]
-        consecutive_names = set(first_appearances) & set(latest_appearances)
+        consecutive_names = consecutive_pitcher_names(
+            first_date,
+            latest_date,
+            first_appearances,
+            latest_appearances,
+        )
         last_game = last_game_by_team[team] or {
             "date": "",
             "appearances": {},
@@ -708,6 +750,7 @@ def build_next_games_section(
 ) -> str:
     first_date = str(bullpen_alerts["firstDate"])
     latest_date = str(bullpen_alerts["latestDate"])
+    latest_bullpen_date = date.fromisoformat(latest_date)
     team_relievers = bullpen_alerts["teams"]
 
     cards = []
@@ -721,7 +764,15 @@ def build_next_games_section(
             ("원정", str(game["away"]), str(game["awayStarter"])),
             ("홈", str(game["home"]), str(game["homeStarter"])),
         ):
-            relievers = team_relievers.get(team, [])
+            relievers = []
+            for reliever in team_relievers.get(team, []):
+                alert = bullpen_alert_for_game(
+                    reliever,
+                    game_date,
+                    latest_bullpen_date,
+                )
+                if alert is not None:
+                    relievers.append(alert)
             if relievers:
                 reliever_html = "".join(
                     build_bullpen_alert_chip(reliever, first_date, latest_date)
@@ -788,8 +839,9 @@ def build_next_games_section(
       </div>
       {grid}
       <p class="footnote">
-        불펜 체크는 {first_date}와 {latest_date} 일자 모두 공식 박스스코어에 구원 등판한 투수와,
-        연투 여부와 무관하게 해당 팀 전경기에 30구 이상 던진 구원 투수를 표시합니다. 출처:
+        2연투는 달력상 이틀 연속인 {first_date}와 {latest_date} 모두 공식 박스스코어에 구원 등판한 투수입니다.
+        휴식일·우천취소일을 사이에 둔 등판은 2연투로 계산하지 않습니다.
+        2연투와 전경기 30구 이상 투구 모두 해당 팀의 다음 경기가 바로 다음 날일 때만 표시합니다. 출처:
         <a href="{BASE_URL}/Schedule/GameCenter/Main.aspx" target="_blank" rel="noreferrer">KBO 게임센터</a>
       </p>
     </section>
