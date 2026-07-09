@@ -66,6 +66,136 @@ def clean_cell(value: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", value)).strip()
 
 
+PLAYER_SEARCH_CACHE: dict[str, list[dict[str, object]]] = {}
+PITCHER_GAME_LOG_CACHE: dict[str, list[dict[str, str]]] = {}
+
+
+def format_pitcher_name(name: object) -> str:
+    return clean_cell(str(name or ""))
+
+
+def fetch_active_players(name: str) -> list[dict[str, object]]:
+    player_name = clean_cell(name)
+    if not player_name:
+        return []
+    if player_name not in PLAYER_SEARCH_CACHE:
+        response = post_json(
+            "/ws/Controls.asmx/GetSearchPlayer",
+            {"name": player_name},
+            "/",
+        )
+        if response.get("code") != "100":
+            raise RuntimeError(
+                f"KBO player search API failed for {player_name}: {response}"
+            )
+        PLAYER_SEARCH_CACHE[player_name] = list(response.get("now", []))
+    return PLAYER_SEARCH_CACHE[player_name]
+
+
+def active_team_pitchers(name: str, team: str) -> list[dict[str, object]]:
+    player_name = clean_cell(name)
+    team_name = clean_cell(team)
+    return [
+        player
+        for player in fetch_active_players(player_name)
+        if clean_cell(str(player.get("P_NM") or "")) == player_name
+        and clean_cell(str(player.get("T_NM") or "")) == team_name
+        and clean_cell(str(player.get("POS_NO") or "")) == "투수"
+    ]
+
+
+def fetch_pitcher_game_logs(player_id: object) -> list[dict[str, str]]:
+    player_id_text = clean_cell(str(player_id or ""))
+    if not player_id_text:
+        return []
+    if player_id_text in PITCHER_GAME_LOG_CACHE:
+        return PITCHER_GAME_LOG_CACHE[player_id_text]
+
+    page = request_text(
+        "/Record/Player/PitcherDetail/Basic.aspx?"
+        + urllib.parse.urlencode({"playerId": player_id_text})
+    )
+    logs = []
+    for row_html in re.findall(
+        r"<tr>\s*<td>\d{2}\.\d{2}</td>.*?</tr>",
+        page,
+        re.DOTALL,
+    ):
+        cells = [
+            clean_cell(cell)
+            for cell in re.findall(r"<td[^>]*>(.*?)</td>", row_html, re.DOTALL)
+        ]
+        if len(cells) < 6:
+            continue
+        date_match = re.match(r"(\d{2})\.(\d{2})", cells[0])
+        if not date_match:
+            continue
+        logs.append(
+            {
+                "date": date(
+                    SEASON,
+                    int(date_match.group(1)),
+                    int(date_match.group(2)),
+                ).isoformat(),
+                "opponent": cells[1],
+                "batters": cells[4],
+                "innings": cells[5],
+            }
+        )
+
+    PITCHER_GAME_LOG_CACHE[player_id_text] = logs
+    return logs
+
+
+def pitcher_identity_from_player(
+    player: dict[str, object],
+    fallback_name: str,
+) -> dict[str, object]:
+    player_id = clean_cell(str(player.get("P_ID") or ""))
+    return {
+        "key": f"player:{player_id}" if player_id else f"name:{fallback_name}",
+        "playerId": player_id,
+        "name": clean_cell(str(player.get("P_NM") or fallback_name)),
+        "identityMatched": bool(player_id),
+    }
+
+
+def resolve_pitcher_identity(
+    name: str,
+    team: str,
+    game_date: str,
+    opponent: str,
+    appearance: dict[str, str],
+    row_index: int,
+) -> dict[str, object]:
+    player_name = clean_cell(name)
+    candidates = active_team_pitchers(player_name, team)
+    if len(candidates) == 1:
+        return pitcher_identity_from_player(candidates[0], player_name)
+
+    matches = []
+    for player in candidates:
+        for log in fetch_pitcher_game_logs(player.get("P_ID")):
+            if (
+                log["date"] == game_date
+                and log["opponent"] == clean_cell(opponent)
+                and log["innings"] == appearance["innings"]
+                and log["batters"] == appearance["batters"]
+            ):
+                matches.append(player)
+                break
+
+    if len(matches) == 1:
+        return pitcher_identity_from_player(matches[0], player_name)
+
+    return {
+        "key": f"ambiguous:{team}:{player_name}:{game_date}:{row_index}",
+        "playerId": "",
+        "name": player_name,
+        "identityMatched": False,
+    }
+
+
 def parse_standings(page: str) -> list[dict[str, object]]:
     table_match = re.search(
         r'<table summary="순위, 팀명,승,패,무,승률,승차,최근10경기,연속,홈,방문".*?'
@@ -240,15 +370,19 @@ def fetch_next_games(start_date: date) -> list[dict[str, object]]:
         next_games = []
         for game in scheduled:
             game_id = str(game["G_ID"])
+            away = clean_cell(str(game.get("AWAY_NM") or ""))
+            home = clean_cell(str(game.get("HOME_NM") or ""))
+            away_starter = clean_cell(str(game.get("T_PIT_P_NM") or ""))
+            home_starter = clean_cell(str(game.get("B_PIT_P_NM") or ""))
             next_games.append(
                 {
                     "date": game_date.isoformat(),
                     "time": clean_cell(str(game.get("G_TM") or "")),
                     "stadium": clean_cell(str(game.get("S_NM") or "")),
-                    "away": clean_cell(str(game.get("AWAY_NM") or "")),
-                    "home": clean_cell(str(game.get("HOME_NM") or "")),
-                    "awayStarter": clean_cell(str(game.get("T_PIT_P_NM") or "")),
-                    "homeStarter": clean_cell(str(game.get("B_PIT_P_NM") or "")),
+                    "away": away,
+                    "home": home,
+                    "awayStarter": away_starter,
+                    "homeStarter": home_starter,
                     "gameId": game_id,
                     "previewUrl": (
                         BASE_URL
@@ -301,6 +435,15 @@ def fetch_relief_appearances(
         clean_cell(str(game.get("AWAY_NM") or "")),
         clean_cell(str(game.get("HOME_NM") or "")),
     ]
+    opponents = {
+        team_names[0]: team_names[1],
+        team_names[1]: team_names[0],
+    }
+    game_date = date(
+        int(game_id[:4]),
+        int(game_id[4:6]),
+        int(game_id[6:8]),
+    ).isoformat()
     pitcher_tables = response.get("arrPitcher", [])
     if len(pitcher_tables) != 2:
         raise RuntimeError(
@@ -312,17 +455,29 @@ def fetch_relief_appearances(
     }
     for team, pitcher_table in zip(team_names, pitcher_tables):
         table = json.loads(pitcher_table["table"])
-        for row_data in table.get("rows", []):
+        for row_index, row_data in enumerate(table.get("rows", [])):
             cells = [
                 clean_cell(str(cell.get("Text") or ""))
                 for cell in row_data.get("row", [])
             ]
             if len(cells) < 9 or cells[1] == "선발":
                 continue
-            appearances[team][cells[0]] = {
+            appearance = {
+                "name": cells[0],
                 "innings": cells[6],
+                "batters": cells[7],
                 "pitches": cells[8],
             }
+            identity = resolve_pitcher_identity(
+                cells[0],
+                team,
+                game_date,
+                opponents[team],
+                appearance,
+                row_index,
+            )
+            appearance.update(identity)
+            appearances[team][str(identity["key"])] = appearance
     return appearances
 
 
@@ -434,7 +589,7 @@ def fetch_bullpen_alerts(latest_date: date) -> dict[str, object]:
     for team in TEAM_COLORS:
         first_appearances = appearances_by_date[first_date][team]
         latest_appearances = appearances_by_date[latest_date][team]
-        consecutive_names = consecutive_pitcher_names(
+        consecutive_keys = consecutive_pitcher_names(
             first_date,
             latest_date,
             first_appearances,
@@ -445,30 +600,42 @@ def fetch_bullpen_alerts(latest_date: date) -> dict[str, object]:
             "appearances": {},
         }
         last_game_appearances = last_game["appearances"]
-        heavy_names = {
-            name
-            for name, appearance in last_game_appearances.items()
+        heavy_keys = {
+            key
+            for key, appearance in last_game_appearances.items()
             if pitch_count_value(appearance["pitches"]) >= 30
         }
 
         alerts = []
-        for name in sorted(consecutive_names | heavy_names, key=lambda name: name):
+        alert_keys = consecutive_keys | heavy_keys
+        for key in sorted(
+            alert_keys,
+            key=lambda key: str(
+                latest_appearances.get(key, last_game_appearances.get(key, {})).get(
+                    "name", key
+                )
+            ),
+        ):
+            appearance = latest_appearances.get(key) or last_game_appearances.get(key)
+            if appearance is None:
+                appearance = first_appearances.get(key, {})
             alert = {
-                "name": name,
-                "consecutive": name in consecutive_names,
-                "heavyLastGame": name in heavy_names,
+                "name": appearance.get("name", key),
+                "playerId": appearance.get("playerId", ""),
+                "consecutive": key in consecutive_keys,
+                "heavyLastGame": key in heavy_keys,
             }
-            if name in consecutive_names:
+            if key in consecutive_keys:
                 alert.update(
                     {
-                        "firstInnings": first_appearances[name]["innings"],
-                        "firstPitches": first_appearances[name]["pitches"],
-                        "latestInnings": latest_appearances[name]["innings"],
-                        "latestPitches": latest_appearances[name]["pitches"],
+                        "firstInnings": first_appearances[key]["innings"],
+                        "firstPitches": first_appearances[key]["pitches"],
+                        "latestInnings": latest_appearances[key]["innings"],
+                        "latestPitches": latest_appearances[key]["pitches"],
                     }
                 )
-            if name in heavy_names:
-                last_appearance = last_game_appearances[name]
+            if key in heavy_keys:
+                last_appearance = last_game_appearances[key]
                 alert.update(
                     {
                         "lastGameDate": str(last_game["date"]),
@@ -781,7 +948,7 @@ def build_next_games_section(
             else:
                 reliever_html = '<span class="bullpen-none">없음</span>'
 
-            starter_name = starter or "미발표"
+            starter_name = format_pitcher_name(starter) or "미발표"
             team_blocks.append(
                 f'''
             <div class="next-team" style="--team-color:{TEAM_COLORS[team]}">
@@ -875,7 +1042,7 @@ def build_bullpen_alert_chip(
     return (
         '<span class="bullpen-chip" '
         f'title="{html.escape(title)}">'
-        f'{html.escape(str(reliever["name"]))}'
+        f'{html.escape(format_pitcher_name(reliever["name"]))}'
         f'<small>{html.escape(small)}</small></span>'
     )
 
