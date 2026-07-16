@@ -486,6 +486,16 @@ def pitch_count_value(value: object) -> int:
     return int(match.group()) if match else 0
 
 
+def completed_game_dates(games: list[dict[str, object]]) -> list[date]:
+    return sorted(
+        {
+            date.fromisoformat(str(game["date"]))
+            for game in games
+            if game.get("completed") is True
+        }
+    )
+
+
 def fetch_completed_games(game_date: date) -> list[dict[str, object]]:
     return [
         game
@@ -659,11 +669,9 @@ def build_rank_data(
     history: dict[str, dict[date, int]],
     games: list[dict[str, object]],
 ) -> dict[str, object]:
-    label_dates = []
-    current = SEASON_START
-    while current <= latest_date:
-        label_dates.append(current)
-        current += timedelta(days=1)
+    label_dates = completed_game_dates(games)
+    if not label_dates:
+        raise RuntimeError("No completed game dates were available for the chart")
     labels = [current.isoformat() for current in label_dates]
 
     datasets = []
@@ -799,7 +807,7 @@ def build_rank_data(
         "sourcePage": BASE_URL + "/Record/TeamRank/GraphDaily.aspx",
         "sourceApi": BASE_URL + "/ws/Record.asmx/GetTeamRankDaily",
         "scheduleApi": BASE_URL + "/ws/Schedule.asmx/GetScheduleList",
-        "note": "무경기일은 직전 공식 순위, 게임차, 승패 마진을 유지해 일별 라벨을 채웠습니다.",
+        "note": "정규시즌 완료 경기가 없는 날은 그래프에서 제외했습니다.",
         "seasonStart": SEASON_START.isoformat(),
         "chartEndDate": latest_date.isoformat(),
         "latestOfficialDate": latest_date.isoformat(),

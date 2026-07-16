@@ -5,10 +5,26 @@ from unittest.mock import patch
 from update_kbo import (
     build_bullpen_alert_chip,
     bullpen_alert_for_game,
+    completed_game_dates,
     consecutive_pitcher_names,
     format_pitcher_name,
     resolve_pitcher_identity,
 )
+
+
+class CompletedGameDatesTest(unittest.TestCase):
+    def test_excludes_days_without_completed_games(self):
+        games = [
+            {"date": "2026-07-05", "completed": True},
+            {"date": "2026-07-05", "completed": True},
+            {"date": "2026-07-06", "completed": False},
+            {"date": "2026-07-07", "completed": True},
+        ]
+
+        self.assertEqual(
+            completed_game_dates(games),
+            [date(2026, 7, 5), date(2026, 7, 7)],
+        )
 
 
 class ConsecutivePitcherNamesTest(unittest.TestCase):
