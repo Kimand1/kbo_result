@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from fractions import Fraction
 from pathlib import Path
 
 
@@ -494,6 +495,135 @@ def completed_game_dates(games: list[dict[str, object]]) -> list[date]:
             if game.get("completed") is True
         }
     )
+
+
+def empty_team_records() -> dict[str, dict[str, int]]:
+    return {
+        team: {"games": 0, "wins": 0, "losses": 0, "draws": 0}
+        for team in TEAM_COLORS
+    }
+
+
+def apply_game_to_records(
+    records: dict[str, dict[str, int]],
+    game: dict[str, object],
+) -> None:
+    away = str(game["away"])
+    home = str(game["home"])
+    if away not in records or home not in records:
+        raise RuntimeError(f"Unexpected teams in completed game: {away}, {home}")
+
+    away_score = int(game["awayScore"])
+    home_score = int(game["homeScore"])
+    records[away]["games"] += 1
+    records[home]["games"] += 1
+    if away_score == home_score:
+        records[away]["draws"] += 1
+        records[home]["draws"] += 1
+    elif away_score > home_score:
+        records[away]["wins"] += 1
+        records[home]["losses"] += 1
+    else:
+        records[away]["losses"] += 1
+        records[home]["wins"] += 1
+
+
+def team_win_rate(record: dict[str, int]) -> Fraction:
+    decisions = record["wins"] + record["losses"]
+    return Fraction(record["wins"], decisions) if decisions else Fraction(0)
+
+
+def calculate_team_ranks(
+    records: dict[str, dict[str, int]],
+) -> tuple[list[str], dict[str, int]]:
+    team_order = {team: index for index, team in enumerate(TEAM_COLORS)}
+    ordered_teams = sorted(
+        records,
+        key=lambda team: (-team_win_rate(records[team]), team_order[team]),
+    )
+    ranks = {}
+    previous_rate = None
+    previous_rank = None
+    for position, team in enumerate(ordered_teams, start=1):
+        rate = team_win_rate(records[team])
+        rank = previous_rank if rate == previous_rate else position
+        ranks[team] = int(rank)
+        previous_rate = rate
+        previous_rank = rank
+    return ordered_teams, ranks
+
+
+def build_standings_from_games(
+    games: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    records = empty_team_records()
+    for game in games:
+        apply_game_to_records(records, game)
+
+    ordered_teams, ranks = calculate_team_ranks(records)
+    leader = records[ordered_teams[0]]
+    standings = []
+    for team in ordered_teams:
+        record = records[team]
+        rate = team_win_rate(record)
+        games_behind_twice = (
+            0
+            if ranks[team] == 1
+            else max(
+                0,
+                leader["wins"]
+                - record["wins"]
+                + record["losses"]
+                - leader["losses"],
+            )
+        )
+        games_behind = (
+            str(games_behind_twice // 2)
+            if games_behind_twice % 2 == 0
+            else f"{games_behind_twice // 2}.5"
+        )
+        standings.append(
+            {
+                "rank": ranks[team],
+                "team": team,
+                "games": record["games"],
+                "wins": record["wins"],
+                "losses": record["losses"],
+                "draws": record["draws"],
+                "winRate": f"{float(rate):.3f}".removeprefix("0"),
+                "gamesBehind": games_behind,
+            }
+        )
+    return standings
+
+
+def backfill_rank_history(
+    history: dict[str, dict[date, int]],
+    games: list[dict[str, object]],
+    latest_history_date: date,
+) -> dict[str, dict[date, int]]:
+    extended = {team: dict(points) for team, points in history.items()}
+    records = empty_team_records()
+    games_by_date: dict[date, list[dict[str, object]]] = defaultdict(list)
+    for game in games:
+        games_by_date[date.fromisoformat(str(game["date"]))].append(game)
+
+    for current in sorted(games_by_date):
+        for game in games_by_date[current]:
+            apply_game_to_records(records, game)
+        _, ranks = calculate_team_ranks(records)
+        if current <= latest_history_date:
+            for team, points in extended.items():
+                official_rank = points.get(current)
+                if official_rank is not None and official_rank != ranks[team]:
+                    raise RuntimeError(
+                        f"Calculated rank for {team} on {current} is "
+                        f"{ranks[team]}, daily rank API shows {official_rank}"
+                    )
+            continue
+        for team in extended:
+            extended[team][current] = ranks[team]
+    return extended
 
 
 def fetch_completed_games(game_date: date) -> list[dict[str, object]]:
@@ -1129,9 +1259,44 @@ def lambda_match(*parts: str) -> str:
 def main() -> None:
     today_kst = datetime.now(KST).date()
     standings_page = request_text("/Record/TeamRank/TeamRank.aspx")
-    standings = parse_standings(standings_page)
-    latest_date, history = fetch_rank_history(today_kst)
-    games = fetch_games(latest_date)
+    official_standings = parse_standings(standings_page)
+    latest_history_date, history = fetch_rank_history(today_kst)
+    games = fetch_games(today_kst)
+    game_dates = completed_game_dates(games)
+    if not game_dates:
+        raise RuntimeError("No completed KBO games were available")
+    latest_date = game_dates[-1]
+
+    official_game_count_twice = sum(
+        int(row["games"]) for row in official_standings
+    )
+    if official_game_count_twice % 2:
+        raise RuntimeError("Official standings contain an odd team-game total")
+    official_game_count = official_game_count_twice // 2
+    if official_game_count > len(games):
+        raise RuntimeError(
+            "Official standings are ahead of the completed schedule: "
+            f"{official_game_count} games vs {len(games)}"
+        )
+    if official_game_count == len(games):
+        standings = official_standings
+    else:
+        standings = build_standings_from_games(games)
+        print(
+            "Official standings are not updated yet; "
+            f"calculated standings from {len(games)} completed games"
+        )
+
+    history = backfill_rank_history(
+        history,
+        games,
+        latest_history_date,
+    )
+    if latest_history_date < latest_date:
+        print(
+            "Daily rank history is not updated yet; "
+            f"calculated ranks through {latest_date.isoformat()}"
+        )
     rank_data = build_rank_data(standings, latest_date, history, games)
     next_games = fetch_next_games(today_kst)
     bullpen_date = latest_date

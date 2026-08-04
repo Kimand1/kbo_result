@@ -3,7 +3,9 @@ from datetime import date
 from unittest.mock import patch
 
 from update_kbo import (
+    backfill_rank_history,
     build_bullpen_alert_chip,
+    build_standings_from_games,
     bullpen_alert_for_game,
     completed_game_dates,
     consecutive_pitcher_names,
@@ -25,6 +27,58 @@ class CompletedGameDatesTest(unittest.TestCase):
             completed_game_dates(games),
             [date(2026, 7, 5), date(2026, 7, 7)],
         )
+
+
+class DelayedOfficialDataTest(unittest.TestCase):
+    games = [
+        {
+            "date": "2026-08-04",
+            "away": "한화",
+            "home": "삼성",
+            "awayScore": 4,
+            "homeScore": 1,
+            "completed": True,
+        },
+        {
+            "date": "2026-08-04",
+            "away": "키움",
+            "home": "롯데",
+            "awayScore": 2,
+            "homeScore": 3,
+            "completed": True,
+        },
+        {
+            "date": "2026-08-04",
+            "away": "LG",
+            "home": "SSG",
+            "awayScore": 8,
+            "homeScore": 10,
+            "completed": True,
+        },
+    ]
+
+    def test_builds_standings_from_completed_games(self):
+        standings = {
+            row["team"]: row for row in build_standings_from_games(self.games)
+        }
+
+        self.assertEqual(standings["한화"]["games"], 1)
+        self.assertEqual(standings["한화"]["wins"], 1)
+        self.assertEqual(standings["한화"]["winRate"], "1.000")
+        self.assertEqual(standings["삼성"]["losses"], 1)
+
+    def test_backfills_rank_date_when_daily_rank_api_lags(self):
+        official_date = date(2026, 8, 2)
+        history = {team: {official_date: 1} for team in (
+            "LG", "KT", "삼성", "KIA", "두산",
+            "한화", "NC", "SSG", "롯데", "키움",
+        )}
+
+        extended = backfill_rank_history(history, self.games, official_date)
+
+        for points in extended.values():
+            self.assertIn(date(2026, 8, 4), points)
+        self.assertNotIn(date(2026, 8, 4), history["한화"])
 
 
 class ConsecutivePitcherNamesTest(unittest.TestCase):
