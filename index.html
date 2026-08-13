@@ -877,34 +877,34 @@
     <section class="layout">
       <div class="chart-panel">
         <div class="chart-block">
-          <h2 class="chart-title">일별 순위</h2>
-          <div class="chart-wrap">
-            <canvas id="rankChart" aria-label="2026 KBO 팀별 일별 순위 꺾은선 그래프"></canvas>
-          </div>
-        </div>
-        <div class="chart-block">
           <div class="chart-heading-row">
-            <h2 class="chart-title">1위와의 게임차</h2>
-            <div class="date-range-controls" role="group" aria-label="게임차와 승패 마진 표시 기간">
+            <h2 class="chart-title">일별 순위</h2>
+            <div class="date-range-controls" role="group" aria-label="세 그래프 표시 기간">
               <label>
                 시작
-                <input type="date" id="gamesBehindStartDate" aria-label="게임차와 승패 마진 그래프 시작일">
+                <input type="date" id="chartRangeStartDate" aria-label="세 그래프 시작일">
               </label>
               <span class="date-range-separator" aria-hidden="true">~</span>
               <label>
                 종료
-                <input type="date" id="gamesBehindEndDate" aria-label="게임차와 승패 마진 그래프 종료일">
+                <input type="date" id="chartRangeEndDate" aria-label="세 그래프 종료일">
               </label>
               <div class="quick-range-buttons">
                 <button type="button" id="showRecent10Days">최근 10경기일</button>
                 <button type="button" data-range-months="1">한달</button>
                 <button type="button" data-range-months="2">두달</button>
                 <button type="button" data-range-months="3">세달</button>
-                <button type="button" id="showFullGamesBehindRange">전체 기간</button>
+                <button type="button" id="showFullChartRange">전체 기간</button>
               </div>
-              <p class="date-range-summary" id="gamesBehindRangeSummary" aria-live="polite"></p>
+              <p class="date-range-summary" id="chartRangeSummary" aria-live="polite"></p>
             </div>
           </div>
+          <div class="chart-wrap">
+            <canvas id="rankChart" aria-label="2026 KBO 팀별 일별 순위 꺾은선 그래프"></canvas>
+          </div>
+        </div>
+        <div class="chart-block">
+          <h2 class="chart-title">1위와의 게임차</h2>
           <div class="chart-wrap">
             <canvas id="gamesBehindChart" aria-label="2026 KBO 팀별 1위와의 일별 게임차 꺾은선 그래프"></canvas>
           </div>
@@ -1685,13 +1685,14 @@
 
     const chartMobileQuery = window.matchMedia('(max-width: 720px)');
     const chartCompactQuery = window.matchMedia('(max-width: 480px)');
-    const gamesBehindStartDate = document.getElementById('gamesBehindStartDate');
-    const gamesBehindEndDate = document.getElementById('gamesBehindEndDate');
-    const gamesBehindRangeSummary = document.getElementById('gamesBehindRangeSummary');
+    const chartRangeStartDate = document.getElementById('chartRangeStartDate');
+    const chartRangeEndDate = document.getElementById('chartRangeEndDate');
+    const chartRangeSummary = document.getElementById('chartRangeSummary');
+    const rankCanvas = document.getElementById('rankChart');
     const gamesBehindCanvas = document.getElementById('gamesBehindChart');
     const winLossMarginCanvas = document.getElementById('winLossMarginChart');
 
-    function getGamesBehindRangeStartDate(months) {
+    function getChartRangeStartDate(months) {
       const endDate = new Date(`${RANK_CHART_DATA.chartEndDate}T00:00:00Z`);
       const targetMonth = endDate.getUTCMonth() - months;
       const targetYear = endDate.getUTCFullYear() + Math.floor(targetMonth / 12);
@@ -1713,7 +1714,7 @@
         : requestedStart;
     }
 
-    const gamesBehindDefaultStartDate = getGamesBehindRangeStartDate(1);
+    const chartDefaultStartDate = getChartRangeStartDate(1);
     function findGameDateIndexOnOrAfter(dateValue) {
       const index = RANK_CHART_DATA.labels.findIndex(label => label >= dateValue);
       return index < 0 ? RANK_CHART_DATA.labels.length - 1 : index;
@@ -1726,17 +1727,21 @@
       return 0;
     }
 
-    const gamesBehindDefaultStartIndex = findGameDateIndexOnOrAfter(
-      gamesBehindDefaultStartDate
+    const chartDefaultStartIndex = findGameDateIndexOnOrAfter(
+      chartDefaultStartDate
     );
-    const gamesBehindInitialLabels = RANK_CHART_DATA.labels.slice(gamesBehindDefaultStartIndex);
+    const chartInitialLabels = RANK_CHART_DATA.labels.slice(chartDefaultStartIndex);
+    const rankInitialDatasets = RANK_CHART_DATA.datasets.map(dataset => ({
+      ...dataset,
+      data: dataset.data.slice(chartDefaultStartIndex)
+    }));
     const gamesBehindInitialDatasets = RANK_CHART_DATA.gamesBehindDatasets.map(dataset => ({
       ...dataset,
-      data: dataset.data.slice(gamesBehindDefaultStartIndex)
+      data: dataset.data.slice(chartDefaultStartIndex)
     }));
     const winLossMarginInitialDatasets = RANK_CHART_DATA.winLossMarginDatasets.map(dataset => ({
       ...dataset,
-      data: dataset.data.slice(gamesBehindDefaultStartIndex)
+      data: dataset.data.slice(chartDefaultStartIndex)
     }));
     const gamesBehindInitialMax = Math.max(
       1,
@@ -1758,17 +1763,21 @@
 
     const winLossMarginInitialRange = getWinLossMarginRange(winLossMarginInitialDatasets);
 
-    [gamesBehindStartDate, gamesBehindEndDate].forEach(input => {
+    [chartRangeStartDate, chartRangeEndDate].forEach(input => {
       input.min = RANK_CHART_DATA.seasonStart;
       input.max = RANK_CHART_DATA.chartEndDate;
     });
-    gamesBehindStartDate.value = gamesBehindInitialLabels[0];
-    gamesBehindEndDate.value = gamesBehindInitialLabels[gamesBehindInitialLabels.length - 1];
+    chartRangeStartDate.value = chartInitialLabels[0];
+    chartRangeEndDate.value = chartInitialLabels[chartInitialLabels.length - 1];
 
-    function updateGamesBehindRangeSummary(labels) {
+    function updateChartRangeSummary(labels) {
       const firstDate = labels[0];
       const lastDate = labels[labels.length - 1];
-      gamesBehindRangeSummary.textContent = `${firstDate} ~ ${lastDate} · ${labels.length}경기일`;
+      chartRangeSummary.textContent = `${firstDate} ~ ${lastDate} · ${labels.length}경기일`;
+      rankCanvas.setAttribute(
+        'aria-label',
+        `2026 KBO 팀별 일별 순위 꺾은선 그래프, ${firstDate}부터 ${lastDate}까지`
+      );
       gamesBehindCanvas.setAttribute(
         'aria-label',
         `2026 KBO 팀별 1위와의 게임차 꺾은선 그래프, ${firstDate}부터 ${lastDate}까지`
@@ -1779,7 +1788,7 @@
       );
     }
 
-    updateGamesBehindRangeSummary(gamesBehindInitialLabels);
+    updateChartRangeSummary(chartInitialLabels);
 
     let chart;
     let gamesBehindChart;
@@ -1798,8 +1807,8 @@
     chart = new Chart(document.getElementById('rankChart'), {
       type: 'line',
       data: {
-        labels: RANK_CHART_DATA.labels,
-        datasets: RANK_CHART_DATA.datasets
+        labels: chartInitialLabels,
+        datasets: rankInitialDatasets
       },
       options: {
         responsive: true,
@@ -1869,7 +1878,7 @@
     gamesBehindChart = new Chart(document.getElementById('gamesBehindChart'), {
       type: 'line',
       data: {
-        labels: gamesBehindInitialLabels,
+        labels: chartInitialLabels,
         datasets: gamesBehindInitialDatasets
       },
       options: {
@@ -1940,7 +1949,7 @@
     winLossMarginChart = new Chart(document.getElementById('winLossMarginChart'), {
       type: 'line',
       data: {
-        labels: gamesBehindInitialLabels,
+        labels: chartInitialLabels,
         datasets: winLossMarginInitialDatasets
       },
       options: {
@@ -2011,7 +2020,7 @@
       }
     });
 
-    function setGamesBehindDateRange(startDate, endDate, changedInput = '') {
+    function setChartDateRange(startDate, endDate, changedInput = '') {
       let startIndex = findGameDateIndexOnOrAfter(startDate);
       let endIndex = findGameDateIndexOnOrBefore(endDate);
 
@@ -2024,8 +2033,15 @@
       }
 
       const labels = RANK_CHART_DATA.labels.slice(startIndex, endIndex + 1);
-      gamesBehindStartDate.value = labels[0];
-      gamesBehindEndDate.value = labels[labels.length - 1];
+      chartRangeStartDate.value = labels[0];
+      chartRangeEndDate.value = labels[labels.length - 1];
+      chart.data.labels = labels;
+      chart.data.datasets.forEach((dataset, index) => {
+        dataset.data = RANK_CHART_DATA.datasets[index].data.slice(
+          startIndex,
+          endIndex + 1
+        );
+      });
       gamesBehindChart.data.labels = labels;
       gamesBehindChart.data.datasets.forEach((dataset, index) => {
         dataset.data = RANK_CHART_DATA.gamesBehindDatasets[index].data.slice(
@@ -2047,28 +2063,29 @@
       const winLossMarginRange = getWinLossMarginRange(winLossMarginChart.data.datasets);
       winLossMarginChart.options.scales.y.min = winLossMarginRange.min;
       winLossMarginChart.options.scales.y.max = winLossMarginRange.max;
-      updateGamesBehindRangeSummary(labels);
+      updateChartRangeSummary(labels);
+      chart.update();
       gamesBehindChart.update();
       winLossMarginChart.update();
     }
 
-    gamesBehindStartDate.addEventListener('change', () => {
-      setGamesBehindDateRange(
-        gamesBehindStartDate.value,
-        gamesBehindEndDate.value,
+    chartRangeStartDate.addEventListener('change', () => {
+      setChartDateRange(
+        chartRangeStartDate.value,
+        chartRangeEndDate.value,
         'start'
       );
     });
-    gamesBehindEndDate.addEventListener('change', () => {
-      setGamesBehindDateRange(
-        gamesBehindStartDate.value,
-        gamesBehindEndDate.value,
+    chartRangeEndDate.addEventListener('change', () => {
+      setChartDateRange(
+        chartRangeStartDate.value,
+        chartRangeEndDate.value,
         'end'
       );
     });
     document.getElementById('showRecent10Days').addEventListener('click', () => {
       const startIndex = Math.max(0, RANK_CHART_DATA.labels.length - 10);
-      setGamesBehindDateRange(
+      setChartDateRange(
         RANK_CHART_DATA.labels[startIndex],
         RANK_CHART_DATA.labels[RANK_CHART_DATA.labels.length - 1]
       );
@@ -2076,14 +2093,14 @@
     document.querySelectorAll('[data-range-months]').forEach(button => {
       button.addEventListener('click', () => {
         const months = Number(button.dataset.rangeMonths);
-        setGamesBehindDateRange(
-          getGamesBehindRangeStartDate(months),
+        setChartDateRange(
+          getChartRangeStartDate(months),
           RANK_CHART_DATA.chartEndDate
         );
       });
     });
-    document.getElementById('showFullGamesBehindRange').addEventListener('click', () => {
-      setGamesBehindDateRange(
+    document.getElementById('showFullChartRange').addEventListener('click', () => {
+      setChartDateRange(
         RANK_CHART_DATA.labels[0],
         RANK_CHART_DATA.labels[RANK_CHART_DATA.labels.length - 1]
       );
