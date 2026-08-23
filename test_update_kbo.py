@@ -10,6 +10,7 @@ from update_kbo import (
     completed_game_dates,
     consecutive_pitcher_names,
     format_pitcher_name,
+    reconcile_completed_games,
     resolve_pitcher_identity,
 )
 
@@ -79,6 +80,90 @@ class DelayedOfficialDataTest(unittest.TestCase):
         for points in extended.values():
             self.assertIn(date(2026, 8, 4), points)
         self.assertNotIn(date(2026, 8, 4), history["한화"])
+
+
+class DelayedScheduleReviewTest(unittest.TestCase):
+    def test_uses_finished_game_center_row_when_official_counts_match(self):
+        existing_games = [
+            {
+                "date": "2026-08-22",
+                "time": "18:00",
+                "away": "LG",
+                "home": "KT",
+                "awayScore": 4,
+                "homeScore": 3,
+                "stadium": "수원",
+                "completed": True,
+            }
+        ]
+        standings = [
+            {"team": "LG", "games": 1},
+            {"team": "KT", "games": 1},
+            {"team": "삼성", "games": 1},
+            {"team": "NC", "games": 1},
+        ]
+        delayed_result = {
+            "GAME_STATE_SC": "3",
+            "CANCEL_SC_ID": "0",
+            "GAME_RESULT_CK": 0,
+            "G_TM": "18:00",
+            "AWAY_NM": "삼성",
+            "HOME_NM": "NC",
+            "T_SCORE_CN": "2",
+            "B_SCORE_CN": "1",
+            "S_NM": "창원",
+        }
+
+        with patch("update_kbo.fetch_game_list", return_value=[delayed_result]):
+            reconciled = reconcile_completed_games(
+                existing_games,
+                date(2026, 8, 23),
+                standings,
+            )
+
+        self.assertEqual(len(reconciled), 2)
+        self.assertEqual(reconciled[-1]["date"], "2026-08-23")
+        self.assertEqual(reconciled[-1]["away"], "삼성")
+        self.assertEqual(reconciled[-1]["homeScore"], 1)
+
+    def test_keeps_reviewed_games_when_official_team_counts_do_not_match(self):
+        existing_games = [
+            {
+                "date": "2026-08-22",
+                "time": "18:00",
+                "away": "LG",
+                "home": "KT",
+                "awayScore": 4,
+                "homeScore": 3,
+                "stadium": "수원",
+                "completed": True,
+            }
+        ]
+        standings = [
+            {"team": "LG", "games": 1},
+            {"team": "KT", "games": 1},
+            {"team": "KIA", "games": 1},
+            {"team": "키움", "games": 1},
+        ]
+        unrelated_result = {
+            "GAME_STATE_SC": "3",
+            "CANCEL_SC_ID": "0",
+            "G_TM": "18:00",
+            "AWAY_NM": "삼성",
+            "HOME_NM": "NC",
+            "T_SCORE_CN": "2",
+            "B_SCORE_CN": "1",
+            "S_NM": "창원",
+        }
+
+        with patch("update_kbo.fetch_game_list", return_value=[unrelated_result]):
+            reconciled = reconcile_completed_games(
+                existing_games,
+                date(2026, 8, 23),
+                standings,
+            )
+
+        self.assertIs(reconciled, existing_games)
 
 
 class ConsecutivePitcherNamesTest(unittest.TestCase):

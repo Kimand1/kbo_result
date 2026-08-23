@@ -356,6 +356,87 @@ def fetch_game_list(game_date: date) -> list[dict[str, object]]:
     ]
 
 
+def completed_game_from_game_list(
+    game_date: date,
+    game: dict[str, object],
+) -> dict[str, object] | None:
+    """Convert a finished game-center row while its result details may lag."""
+    if (
+        str(game.get("GAME_STATE_SC")) != "3"
+        or str(game.get("CANCEL_SC_ID")) != "0"
+    ):
+        return None
+
+    away = clean_cell(str(game.get("AWAY_NM") or ""))
+    home = clean_cell(str(game.get("HOME_NM") or ""))
+    if away not in TEAM_COLORS or home not in TEAM_COLORS or away == home:
+        return None
+
+    try:
+        away_score = int(str(game.get("T_SCORE_CN", "")).strip())
+        home_score = int(str(game.get("B_SCORE_CN", "")).strip())
+    except ValueError:
+        return None
+
+    return {
+        "date": game_date.isoformat(),
+        "time": clean_cell(str(game.get("G_TM") or "")),
+        "away": away,
+        "home": home,
+        "awayScore": away_score,
+        "homeScore": home_score,
+        "stadium": clean_cell(str(game.get("S_NM") or "")),
+        "completed": True,
+    }
+
+
+def games_match_official_counts(
+    games: list[dict[str, object]],
+    standings: list[dict[str, object]],
+) -> bool:
+    counts: dict[str, int] = defaultdict(int)
+    for game in games:
+        counts[str(game["away"])] += 1
+        counts[str(game["home"])] += 1
+    expected = {str(row["team"]): int(row["games"]) for row in standings}
+    return dict(counts) == expected
+
+
+def reconcile_completed_games(
+    games: list[dict[str, object]],
+    end_date: date,
+    standings: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Fill delayed schedule reviews using finished game-center rows."""
+    if games_match_official_counts(games, standings):
+        return games
+
+    candidate_games = list(games)
+    for offset in range(7):
+        game_date = end_date - timedelta(days=offset)
+        game_center_games = [
+            completed
+            for game in fetch_game_list(game_date)
+            if (completed := completed_game_from_game_list(game_date, game))
+            is not None
+        ]
+        if not game_center_games:
+            continue
+
+        date_text = game_date.isoformat()
+        candidate_games = [
+            game for game in candidate_games if str(game["date"]) != date_text
+        ]
+        candidate_games.extend(game_center_games)
+        candidate_games.sort(
+            key=lambda game: (game["date"], game["time"], game["stadium"])
+        )
+        if games_match_official_counts(candidate_games, standings):
+            return candidate_games
+
+    return games
+
+
 def fetch_next_games(start_date: date) -> list[dict[str, object]]:
     for offset in range(15):
         game_date = start_date + timedelta(days=offset)
@@ -1262,17 +1343,30 @@ def main() -> None:
     official_standings = parse_standings(standings_page)
     latest_history_date, history = fetch_rank_history(today_kst)
     games = fetch_games(today_kst)
-    game_dates = completed_game_dates(games)
-    if not game_dates:
-        raise RuntimeError("No completed KBO games were available")
-    latest_date = game_dates[-1]
-
     official_game_count_twice = sum(
         int(row["games"]) for row in official_standings
     )
     if official_game_count_twice % 2:
         raise RuntimeError("Official standings contain an odd team-game total")
     official_game_count = official_game_count_twice // 2
+    if official_game_count > len(games):
+        schedule_game_count = len(games)
+        games = reconcile_completed_games(
+            games,
+            today_kst,
+            official_standings,
+        )
+        if official_game_count == len(games):
+            print(
+                "Schedule reviews are not updated yet; "
+                f"supplemented {len(games) - schedule_game_count} completed games "
+                "from the game center"
+            )
+    game_dates = completed_game_dates(games)
+    if not game_dates:
+        raise RuntimeError("No completed KBO games were available")
+    latest_date = game_dates[-1]
+
     if official_game_count > len(games):
         raise RuntimeError(
             "Official standings are ahead of the completed schedule: "
