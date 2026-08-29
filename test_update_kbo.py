@@ -165,6 +165,59 @@ class DelayedScheduleReviewTest(unittest.TestCase):
 
         self.assertIs(reconciled, existing_games)
 
+    def test_uses_unique_subset_reflected_in_official_team_counts(self):
+        standings = [
+            {"team": "삼성", "games": 1},
+            {"team": "NC", "games": 1},
+            {"team": "한화", "games": 1},
+            {"team": "SSG", "games": 1},
+        ]
+        delayed_results = [
+            {
+                "GAME_STATE_SC": "3",
+                "CANCEL_SC_ID": "0",
+                "G_TM": "18:00",
+                "AWAY_NM": "삼성",
+                "HOME_NM": "NC",
+                "T_SCORE_CN": "2",
+                "B_SCORE_CN": "1",
+                "S_NM": "창원",
+            },
+            {
+                "GAME_STATE_SC": "3",
+                "CANCEL_SC_ID": "0",
+                "G_TM": "18:00",
+                "AWAY_NM": "한화",
+                "HOME_NM": "SSG",
+                "T_SCORE_CN": "4",
+                "B_SCORE_CN": "3",
+                "S_NM": "문학",
+            },
+            {
+                "GAME_STATE_SC": "3",
+                "CANCEL_SC_ID": "0",
+                "G_TM": "18:00",
+                "AWAY_NM": "KIA",
+                "HOME_NM": "키움",
+                "T_SCORE_CN": "5",
+                "B_SCORE_CN": "0",
+                "S_NM": "고척",
+            },
+        ]
+
+        with patch("update_kbo.fetch_game_list", return_value=delayed_results):
+            reconciled = reconcile_completed_games(
+                [],
+                date(2026, 8, 29),
+                standings,
+            )
+
+        self.assertEqual(len(reconciled), 2)
+        self.assertEqual(
+            {(game["away"], game["home"]) for game in reconciled},
+            {("삼성", "NC"), ("한화", "SSG")},
+        )
+
 
 class ConsecutivePitcherNamesTest(unittest.TestCase):
     appearances = {"테스트투수": {}}

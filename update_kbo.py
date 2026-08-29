@@ -11,6 +11,7 @@ import urllib.request
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from fractions import Fraction
+from itertools import combinations
 from pathlib import Path
 
 
@@ -424,10 +425,23 @@ def reconcile_completed_games(
             continue
 
         date_text = game_date.isoformat()
-        candidate_games = [
+        games_outside_date = [
             game for game in candidate_games if str(game["date"]) != date_text
         ]
-        candidate_games.extend(game_center_games)
+        matching_candidates = []
+        for subset_size in range(len(game_center_games) + 1):
+            for subset in combinations(game_center_games, subset_size):
+                subset_candidate = games_outside_date + list(subset)
+                if games_match_official_counts(subset_candidate, standings):
+                    matching_candidates.append(subset_candidate)
+
+        if len(matching_candidates) == 1:
+            matching_candidates[0].sort(
+                key=lambda game: (game["date"], game["time"], game["stadium"])
+            )
+            return matching_candidates[0]
+
+        candidate_games = games_outside_date + game_center_games
         candidate_games.sort(
             key=lambda game: (game["date"], game["time"], game["stadium"])
         )
