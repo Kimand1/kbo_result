@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
   schedule:
-    # Every hour from 09:17 through 23:17 KST.
-    - cron: "17 0-14 * * *"
+    # Every 30 minutes from 09:17 through 23:47 KST.
+    - cron: "17,47 0-14 * * *"
   workflow_dispatch:
 
 permissions:
