@@ -1,11 +1,8 @@
-name: Update KBO data and deploy Pages
+name: Deploy KBO site to Pages
 
 on:
   push:
     branches: [main]
-  schedule:
-    # Every 30 minutes from 09:17 through 23:47 KST.
-    - cron: "17,47 0-14 * * *"
   workflow_dispatch:
 
 permissions:
@@ -28,40 +25,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set up Python
-        if: github.event_name != 'push'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Test updater
-        if: github.event_name != 'push'
-        run: python -m unittest -v
-
-      - name: Refresh KBO data
-        if: github.event_name != 'push'
-        run: python update_kbo.py
-
-      - name: Validate generated files
-        if: github.event_name != 'push'
-        run: |
-          python -m json.tool version.json >/dev/null
-          git diff --check
-          python -m unittest -v
-
-      - name: Commit refreshed data
-        if: github.event_name != 'push'
-        run: |
-          if git diff --quiet -- index.html version.json; then
-            echo "KBO data is already current."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html version.json
-          git commit -m "Update KBO data automatically"
-          git push origin HEAD:main
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
