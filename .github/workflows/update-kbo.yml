@@ -1,8 +1,10 @@
-name: Refresh KBO data every 30 minutes
+name: Refresh KBO data every minute (temporary test)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    # Temporary one-minute schedule used to verify automatic triggering.
+    # GitHub may throttle scheduled workflows to its five-minute minimum.
+    - cron: "* * * * *"
   workflow_dispatch:
 
 permissions:
