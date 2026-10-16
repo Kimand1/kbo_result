@@ -5,6 +5,7 @@ from unittest.mock import patch
 from update_kbo import (
     backfill_rank_history,
     build_bullpen_alert_chip,
+    build_postseason_rounds,
     build_standings_from_games,
     bullpen_alert_for_game,
     completed_game_dates,
@@ -364,6 +365,55 @@ class BullpenAlertForGameTest(unittest.TestCase):
         )
 
         self.assertIsNone(alert)
+
+
+class PostseasonRoundsTest(unittest.TestCase):
+    standings = [
+        {"rank": 1, "team": "KT"},
+        {"rank": 2, "team": "삼성"},
+        {"rank": 3, "team": "KIA"},
+        {"rank": 4, "team": "LG"},
+        {"rank": 5, "team": "두산"},
+    ]
+
+    def game(self, series_id, away, home, away_score, home_score):
+        return {"seriesId": series_id, "away": away, "home": home,
+                "awayScore": away_score, "homeScore": home_score,
+                "finished": True}
+
+    def test_fourth_seed_advances_after_one_wildcard_win(self):
+        rounds = build_postseason_rounds(self.standings, [
+            self.game(4, "두산", "LG", 1, 4),
+        ])
+        self.assertEqual(rounds[0]["winner"], "LG")
+        self.assertEqual(rounds[1]["challenger"], "LG")
+        self.assertEqual(rounds[1]["seeded"], "KIA")
+
+    def test_fifth_seed_needs_two_wins_and_draw_advances_fourth(self):
+        one_loss = build_postseason_rounds(self.standings, [
+            self.game(4, "두산", "LG", 2, 1),
+        ])
+        self.assertIsNone(one_loss[0]["winner"])
+        two_losses = build_postseason_rounds(self.standings, [
+            self.game(4, "두산", "LG", 2, 1),
+            self.game(4, "두산", "LG", 3, 1),
+        ])
+        self.assertEqual(two_losses[0]["winner"], "두산")
+        draw = build_postseason_rounds(self.standings, [
+            self.game(4, "두산", "LG", 2, 2),
+        ])
+        self.assertEqual(draw[0]["winner"], "LG")
+
+    def test_regular_season_and_playoff_wins_are_separate(self):
+        rounds = build_postseason_rounds(self.standings, [
+            self.game(4, "두산", "LG", 1, 4),
+            self.game(5, "LG", "KIA", 3, 2),
+            self.game(5, "LG", "KIA", 4, 3),
+            self.game(5, "KIA", "LG", 1, 2),
+        ])
+        self.assertEqual(rounds[1]["winner"], "LG")
+        self.assertEqual(rounds[2]["challenger"], "LG")
+        self.assertEqual(rounds[2]["seeded"], "삼성")
 
 
 class PitcherNameFormatTest(unittest.TestCase):

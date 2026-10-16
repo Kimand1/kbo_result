@@ -1,9 +1,10 @@
-# 2026 KBO 팀별 일별 순위
+# KBO 포스트시즌 · 정규시즌 현황
 
-KBO 공식 웹사이트의 2026 시즌 데이터를 수집해 팀 순위와 경기 정보를 한 페이지에서 보여 주는 정적 웹 프로젝트입니다. 별도의 백엔드나 데이터베이스 없이 `index.html`에 데이터를 포함하며, GitHub Pages로 배포할 수 있습니다.
+KBO 공식 웹사이트의 시즌 데이터를 수집해 포스트시즌 현황과 정규시즌 순위를 두 탭으로 보여 주는 정적 웹 프로젝트입니다. 첫 화면은 포스트시즌이며, 정규시즌 탭에서 기존 그래프와 기록을 볼 수 있습니다. 별도의 백엔드나 데이터베이스 없이 `index.html`에 데이터를 포함하며, GitHub Pages로 배포할 수 있습니다.
 
 ## 주요 기능
 
+- 포스트시즌 네 라운드의 대진, 시리즈 전적, 경기 결과와 다음 경기
 - 팀별 일별 순위, 1위와의 게임차, 승패 마진 그래프
 - 최신 순위와 최근 10경기 성적
 - 최근 완료 경기 결과와 팀별 필터
@@ -49,6 +50,7 @@ python -m http.server 8000
 KBO 공식 웹사이트에서 다음 정보를 수집하고 정적 페이지 데이터를 갱신합니다.
 
 - 정규시즌 최신 순위 및 일별 순위
+- 포스트시즌 경기 결과와 예정 경기, 시리즈 진출 상태
 - 완료 경기 일정과 점수
 - 다음 경기 일정과 예고 선발
 - 최근 투수 등판 기록을 이용한 불펜 체크
@@ -80,7 +82,19 @@ python update_kbo.py
 git diff -- index.html version.json
 ```
 
-현재 시즌과 개막일은 `update_kbo.py` 상단의 `SEASON`, `SEASON_START`에 2026년 기준으로 고정되어 있습니다. 다른 시즌에 사용하려면 이 값과 페이지 제목 등 시즌 표시를 함께 수정해야 합니다.
+### 다음 시즌에 재사용하기
+
+[`season.json`](season.json)의 `season`, `seasonStart`, `postseasonStart`만 새 시즌에 맞게 바꿉니다. `postseasonStart`는 KBO 일정 발표 전에는 `null`로 두고, 발표 후 `YYYY-MM-DD`로 설정합니다. `seasonStart`는 정규시즌 개막일입니다. 첫 정규시즌 경기가 완료된 뒤 `python update_kbo.py`를 실행하면 페이지 제목과 데이터가 새 시즌으로 바뀝니다. 매일 같은 명령으로 갱신할 수 있습니다.
+
+```json
+{
+  "season": 2027,
+  "seasonStart": "2027-03-27",
+  "postseasonStart": null
+}
+```
+
+위 날짜는 설정 방법을 보여 주는 예시일 뿐입니다. 실제 2027년 개막일과 포스트시즌 시작일은 KBO 발표 후 입력하세요. 시즌 전환 시에는 지난해 페이지를 별도로 보관한 후 설정을 변경하면 과거 기록을 남길 수 있습니다.
 
 ### `test_update_kbo.py`
 
@@ -129,6 +143,7 @@ git push origin main
 | `index.html` | HTML, CSS, JavaScript와 현재 KBO 데이터가 포함된 단일 정적 페이지 |
 | `version.json` | 브라우저의 최신 데이터 버전 확인에 사용하는 메타데이터 |
 | `update_kbo.py` | KBO 데이터를 수집·검증하고 정적 파일을 갱신하는 스크립트 |
+| `season.json` | 시즌 연도, 정규시즌 개막일, 포스트시즌 시작일 설정 |
 | `test_update_kbo.py` | 데이터 처리 및 불펜 판정 로직의 단위 테스트 |
 | `.github/workflows/deploy-pages.yml` | `main` 푸시 시 GitHub Pages에 배포하는 워크플로 |
 
@@ -140,7 +155,7 @@ git push origin main
 
 ### 완료 경기가 없다는 오류
 
-`No completed KBO games were available`은 설정된 시즌 개막일 이후 완료 경기 데이터를 찾지 못했다는 뜻입니다. `SEASON`, `SEASON_START` 값과 KBO 사이트의 해당 시즌 데이터 제공 여부를 확인합니다.
+`No completed KBO games were available`은 설정된 시즌 개막일 이후 완료 경기 데이터를 찾지 못했다는 뜻입니다. `season.json`의 `season`, `seasonStart` 값과 KBO 사이트의 해당 시즌 데이터 제공 여부를 확인합니다.
 
 ### 그래프가 보이지 않음
 

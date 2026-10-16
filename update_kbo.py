@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh the embedded 2026 KBO data in index.html from official KBO sources."""
+"""Refresh the embedded KBO season data in index.html from official KBO sources."""
 
 from __future__ import annotations
 
@@ -16,8 +16,18 @@ from pathlib import Path
 
 
 BASE_URL = "https://www.koreabaseball.com"
-SEASON = 2026
-SEASON_START = date(SEASON, 3, 28)
+CONFIG_PATH = Path(__file__).with_name("season.json")
+SEASON_CONFIG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+SEASON = int(SEASON_CONFIG["season"])
+SEASON_START = date.fromisoformat(SEASON_CONFIG["seasonStart"])
+POSTSEASON_START = (
+    date.fromisoformat(SEASON_CONFIG["postseasonStart"])
+    if SEASON_CONFIG.get("postseasonStart") else None
+)
+if SEASON_START.year != SEASON or (POSTSEASON_START and POSTSEASON_START.year != SEASON):
+    raise ValueError("season.json dates must match the season year")
+if POSTSEASON_START and POSTSEASON_START < SEASON_START:
+    raise ValueError("postseasonStart must not precede seasonStart")
 INDEX_PATH = Path(__file__).with_name("index.html")
 VERSION_PATH = Path(__file__).with_name("version.json")
 KST = timezone(timedelta(hours=9), name="KST")
@@ -337,7 +347,7 @@ def fetch_games(end_date: date) -> list[dict[str, object]]:
     return games
 
 
-def fetch_game_list(game_date: date) -> list[dict[str, object]]:
+def fetch_game_list(game_date: date, series_id: int | None = 0) -> list[dict[str, object]]:
     response = post_json(
         "/ws/Main.asmx/GetKboGameList",
         {
@@ -353,7 +363,7 @@ def fetch_game_list(game_date: date) -> list[dict[str, object]]:
     return [
         game
         for game in response.get("game", [])
-        if int(game.get("SR_ID", -1)) == 0
+        if series_id is None or int(game.get("SR_ID", -1)) == series_id
     ]
 
 
@@ -499,6 +509,146 @@ def fetch_next_games(start_date: date) -> list[dict[str, object]]:
         )
 
     return []
+
+
+POSTSEASON_ROUNDS = (
+    ("와일드카드 결정전", 2),
+    ("준플레이오프", 3),
+    ("플레이오프", 3),
+    ("한국시리즈", 4),
+)
+
+
+def fetch_postseason_games(today: date) -> list[dict[str, object]]:
+    if POSTSEASON_START is None:
+        return []
+    last_day = min(max(today + timedelta(days=21), POSTSEASON_START),
+                   POSTSEASON_START + timedelta(days=60))
+    games = []
+    game_date = POSTSEASON_START
+    while game_date <= last_day:
+        for game in fetch_game_list(game_date, series_id=None):
+            series_id = int(game.get("SR_ID", -1))
+            if series_id <= 0 or str(game.get("CANCEL_SC_ID")) != "0":
+                continue
+            away = clean_cell(str(game.get("AWAY_NM") or ""))
+            home = clean_cell(str(game.get("HOME_NM") or ""))
+            if away not in TEAM_COLORS or home not in TEAM_COLORS:
+                continue
+            finished = str(game.get("GAME_STATE_SC")) == "3"
+            try:
+                away_score = int(str(game.get("T_SCORE_CN", "")).strip()) if finished else None
+                home_score = int(str(game.get("B_SCORE_CN", "")).strip()) if finished else None
+            except ValueError:
+                finished, away_score, home_score = False, None, None
+            game_id = str(game.get("G_ID") or "")
+            games.append({
+                "seriesId": series_id,
+                "date": game_date.isoformat(),
+                "time": clean_cell(str(game.get("G_TM") or "")),
+                "stadium": clean_cell(str(game.get("S_NM") or "")),
+                "away": away,
+                "home": home,
+                "awayScore": away_score,
+                "homeScore": home_score,
+                "finished": finished,
+                "gameId": game_id,
+            })
+        game_date += timedelta(days=1)
+    return sorted(games, key=lambda game: (game["date"], game["time"], game["gameId"]))
+
+
+def build_postseason_rounds(
+    standings: list[dict[str, object]], games: list[dict[str, object]]
+) -> list[dict[str, object]]:
+    seeds = {int(row["rank"]): str(row["team"]) for row in standings}
+    series_ids = list(dict.fromkeys(game["seriesId"] for game in games))
+    previous_winner = None
+    rounds = []
+    for index, (name, required_wins) in enumerate(POSTSEASON_ROUNDS):
+        round_games = [game for game in games if index < len(series_ids)
+                       and game["seriesId"] == series_ids[index]]
+        seeded_team = seeds.get(4 - index)
+        challenger = seeds.get(5) if index == 0 else previous_winner
+        if not challenger and round_games:
+            challenger = next((team for game in round_games
+                               for team in (game["away"], game["home"])
+                               if team != seeded_team), None)
+        wins = {team: 0 for team in (seeded_team, challenger) if team}
+        for game in round_games:
+            if not game["finished"] or game["awayScore"] == game["homeScore"]:
+                continue
+            winner = game["away"] if game["awayScore"] > game["homeScore"] else game["home"]
+            wins[winner] = wins.get(winner, 0) + 1
+        if index == 0:
+            # Fourth place advances with one win or draw; fifth place needs two wins.
+            drawn = any(game["finished"] and game["awayScore"] == game["homeScore"]
+                        for game in round_games)
+            winner = (seeded_team if wins.get(seeded_team, 0) >= 1 or drawn
+                      else challenger if wins.get(challenger, 0) >= 2 else None)
+        else:
+            winner = next((team for team, count in wins.items()
+                           if count >= required_wins), None)
+        rounds.append({"name": name, "requiredWins": required_wins,
+                       "seeded": seeded_team, "challenger": challenger,
+                       "wins": wins, "winner": winner, "games": round_games})
+        previous_winner = winner
+    return rounds
+
+
+def build_postseason_section(rounds: list[dict[str, object]]) -> str:
+    cards = []
+    for index, round_data in enumerate(rounds):
+        seeded = round_data["seeded"] or "미정"
+        challenger = round_data["challenger"] or "미정"
+        wins = round_data["wins"]
+        winner = round_data["winner"]
+        games = round_data["games"]
+        remaining = [game for game in games if not game["finished"]]
+        matchup_known = seeded != "미정" and challenger != "미정"
+        current = winner is None and matchup_known and bool(games)
+        if winner:
+            status = f"{winner} 다음 라운드 진출" if index < 3 else f"{winner} 우승"
+        elif current:
+            status = "진행 중" if any(game["finished"] for game in games) else "경기 예정"
+        elif matchup_known:
+            status = "일정 미정"
+        else:
+            status = "대진 미정"
+        game_rows = []
+        for number, game in enumerate(games, 1):
+            if winner and not game["finished"]:
+                continue
+            label = (f'{game["away"]} {game["awayScore"]} : '
+                     f'{game["homeScore"]} {game["home"]}' if game["finished"]
+                     else f'{game["away"]} vs {game["home"]}')
+            game_url = BASE_URL + "/Schedule/GameCenter/Main.aspx?" + urllib.parse.urlencode({
+                "gameDate": str(game["date"]).replace("-", ""),
+                "gameId": game["gameId"],
+            })
+            game_rows.append(
+                f'<li><span>{number}차전 · {html.escape(game["date"])} '
+                f'{html.escape(game["time"])} · {html.escape(label)}</span>'
+                f'<a href="{html.escape(game_url, quote=True)}" target="_blank" rel="noreferrer">경기 정보</a></li>'
+            )
+        next_label = ""
+        if remaining and not winner:
+            next_game = remaining[0]
+            next_label = (f'<p class="series-next">다음 경기: {html.escape(next_game["date"])} '
+                          f'{html.escape(next_game["time"])} · {html.escape(next_game["stadium"])}'
+                          f'</p>')
+        rule = "4위는 1승 또는 무승부 시 진출 · 5위는 2승 필요" if index == 0 else f'{round_data["requiredWins"]}선승제'
+        cards.append(
+            f'<article class="series-card{" is-current" if current else ""}">'
+            f'<h2>{round_data["name"]}</h2><p class="series-rule">{rule}</p>'
+            f'<div class="series-score"><span>{html.escape(seeded)}</span>'
+            f'<strong>{wins.get(seeded, 0)} : {wins.get(challenger, 0)}</strong>'
+            f'<span>{html.escape(challenger)}</span></div>'
+            f'<p class="series-status">{html.escape(status)}</p>{next_label}'
+            f'<ul class="series-games">{"".join(game_rows) or "<li>경기 정보가 아직 없습니다.</li>"}</ul>'
+            f'</article>'
+        )
+    return '<div class="postseason-grid">' + "".join(cards) + '</div>'
 
 
 def fetch_relief_appearances(
@@ -1294,9 +1444,22 @@ def update_html(
     rank_data: dict[str, object],
     next_games: list[dict[str, object]],
     bullpen_alerts: dict[str, object],
+    postseason_rounds: list[dict[str, object]],
 ) -> str:
     latest_date = str(rank_data["latestOfficialDate"])
     generated_at_kst = str(rank_data["generatedAtKst"])
+    previous_season_match = re.search(r"<title>(\d{4}) KBO", page)
+    if not previous_season_match:
+        raise RuntimeError("Could not find the page season title")
+    previous_season = previous_season_match.group(1)
+    page = page.replace(f"{previous_season} KBO", f"{SEASON} KBO")
+    page = page.replace(f"{previous_season} 시즌 팀별", f"{SEASON} 시즌 팀별")
+    page = replace_exactly_once(
+        page,
+        r"<!-- POSTSEASON_START -->.*?<!-- POSTSEASON_END -->",
+        "<!-- POSTSEASON_START -->\n      " + build_postseason_section(postseason_rounds)
+        + "\n      <!-- POSTSEASON_END -->",
+    )
     page = replace_exactly_once(
         page,
         r'(<meta name="kbo-data-version" content=")[^"]*(">)',
@@ -1407,6 +1570,9 @@ def main() -> None:
         )
     rank_data = build_rank_data(standings, latest_date, history, games)
     next_games = fetch_next_games(today_kst)
+    postseason_rounds = build_postseason_rounds(
+        standings, fetch_postseason_games(today_kst)
+    )
     bullpen_date = latest_date
     while bullpen_date >= SEASON_START:
         try:
@@ -1432,6 +1598,7 @@ def main() -> None:
         rank_data,
         next_games,
         bullpen_alerts,
+        postseason_rounds,
     )
     INDEX_PATH.write_text(updated, encoding="utf-8")
     VERSION_PATH.write_text(
