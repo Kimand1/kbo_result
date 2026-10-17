@@ -6,11 +6,13 @@ from update_kbo import (
     backfill_rank_history,
     build_bullpen_alert_chip,
     build_postseason_rounds,
+    build_postseason_section,
     build_standings_from_games,
     bullpen_alert_for_game,
     completed_game_dates,
     consecutive_pitcher_names,
     format_pitcher_name,
+    fetch_postseason_games,
     reconcile_completed_games,
     resolve_pitcher_identity,
 )
@@ -414,6 +416,80 @@ class PostseasonRoundsTest(unittest.TestCase):
         self.assertEqual(rounds[1]["winner"], "LG")
         self.assertEqual(rounds[2]["challenger"], "LG")
         self.assertEqual(rounds[2]["seeded"], "삼성")
+
+
+class PostseasonGameStatusTest(unittest.TestCase):
+    def fetch_games(self, state="3", away_score="1", home_score="5"):
+        today = date(2026, 10, 17)
+        current_game = {
+            "SR_ID": 3, "CANCEL_SC_ID": "0", "GAME_STATE_SC": state,
+            "AWAY_NM": "LG", "HOME_NM": "KIA", "T_SCORE_CN": away_score,
+            "B_SCORE_CN": home_score, "G_ID": "20261017LGHT0",
+            "G_TM": "14:00", "S_NM": "광주",
+        }
+        next_game = {**current_game, "GAME_STATE_SC": "1",
+                     "G_ID": "20261018LGHT0", "T_SCORE_CN": "", "B_SCORE_CN": ""}
+        by_date = {today: [current_game], date(2026, 10, 18): [next_game]}
+        with patch("update_kbo.POSTSEASON_START", today), patch(
+            "update_kbo.fetch_game_list",
+            side_effect=lambda game_date, series_id=None: by_date.get(game_date, []),
+        ):
+            return fetch_postseason_games(today)
+
+    def render(self, games):
+        wildcard = {
+            "seriesId": 4, "date": "2026-10-14", "time": "18:30",
+            "stadium": "잠실", "away": "두산", "home": "LG",
+            "awayScore": 1, "homeScore": 4, "finished": True,
+            "state": "3", "gameId": "20261014OBLG0",
+        }
+        rounds = build_postseason_rounds(PostseasonRoundsTest.standings, [wildcard, *games])
+        return rounds[1], build_postseason_section(rounds)
+
+    def test_finished_game_has_final_score_separate_from_series_wins(self):
+        round_data, page = self.render(self.fetch_games())
+        self.assertEqual(round_data["wins"], {"KIA": 1, "LG": 0})
+        self.assertIn("시리즈 전적", page)
+        self.assertIn("1승 : 0승", page)
+        self.assertIn("1차전 종료 · 다음 경기 대기", page)
+        self.assertIn("LG 1 : 5 KIA · 종료", page)
+        self.assertIn("다음 경기: 2026-10-18 14:00", page)
+        self.assertNotIn("진행 중", page)
+        self.assertNotIn("경기 중", page)
+
+    def test_live_score_does_not_count_as_a_series_win(self):
+        round_data, page = self.render(self.fetch_games(state="2", home_score="0"))
+        self.assertEqual(round_data["wins"], {"KIA": 0, "LG": 0})
+        self.assertIn("1차전 경기 중", page)
+        self.assertIn("LG 1 : 0 KIA · 경기 중", page)
+        self.assertIn("다음 경기: 2026-10-18 14:00", page)
+        self.assertNotIn("다음 경기: 2026-10-17", page)
+
+    def test_scheduled_game_has_no_score_or_finished_status(self):
+        _, page = self.render(self.fetch_games(state="1"))
+        self.assertIn("경기 예정", page)
+        self.assertIn("LG vs KIA · 예정", page)
+        self.assertIn("다음 경기: 2026-10-17 14:00", page)
+        self.assertNotIn("LG 1 : 5 KIA", page)
+
+    def test_finished_game_with_missing_score_waits_for_result(self):
+        round_data, page = self.render(self.fetch_games(home_score=""))
+        self.assertEqual(round_data["wins"], {"KIA": 0, "LG": 0})
+        self.assertIn("경기 종료 · 결과 반영 대기", page)
+        self.assertIn("LG vs KIA · 종료 · 결과 반영 대기", page)
+        self.assertNotIn("경기 중", page)
+        self.assertNotIn("다음 경기: 2026-10-17", page)
+
+    def test_series_winner_hides_unneeded_games(self):
+        games = self.fetch_games()
+        games = [games[0], {**games[0], "date": "2026-10-18"},
+                 {**games[0], "date": "2026-10-20"},
+                 {**games[1], "date": "2026-10-21"}]
+        round_data, page = self.render(games)
+        self.assertEqual(round_data["winner"], "KIA")
+        self.assertIn("KIA 다음 라운드 진출", page)
+        self.assertNotIn("다음 경기:", page)
+        self.assertNotIn("2026-10-21", page)
 
 
 class PitcherNameFormatTest(unittest.TestCase):

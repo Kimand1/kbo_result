@@ -535,10 +535,11 @@ def fetch_postseason_games(today: date) -> list[dict[str, object]]:
             home = clean_cell(str(game.get("HOME_NM") or ""))
             if away not in TEAM_COLORS or home not in TEAM_COLORS:
                 continue
-            finished = str(game.get("GAME_STATE_SC")) == "3"
+            state = str(game.get("GAME_STATE_SC"))
+            finished = state == "3"
             try:
-                away_score = int(str(game.get("T_SCORE_CN", "")).strip()) if finished else None
-                home_score = int(str(game.get("B_SCORE_CN", "")).strip()) if finished else None
+                away_score = int(str(game.get("T_SCORE_CN", "")).strip()) if state in ("2", "3") else None
+                home_score = int(str(game.get("B_SCORE_CN", "")).strip()) if state in ("2", "3") else None
             except ValueError:
                 finished, away_score, home_score = False, None, None
             game_id = str(game.get("G_ID") or "")
@@ -551,6 +552,7 @@ def fetch_postseason_games(today: date) -> list[dict[str, object]]:
                 "home": home,
                 "awayScore": away_score,
                 "homeScore": home_score,
+                "state": state,
                 "finished": finished,
                 "gameId": game_id,
             })
@@ -604,13 +606,29 @@ def build_postseason_section(rounds: list[dict[str, object]]) -> str:
         wins = round_data["wins"]
         winner = round_data["winner"]
         games = round_data["games"]
-        remaining = [game for game in games if not game["finished"]]
+        remaining = [game for game in games if not game["finished"]
+                     and game.get("state", "1") == "1"]
+        live_number = next((number for number, game in enumerate(games, 1)
+                            if game.get("state") == "2"), None)
+        finished_numbers = [number for number, game in enumerate(games, 1)
+                            if game["finished"]]
+        awaiting_result = any(game.get("state") == "3" and not game["finished"]
+                              for game in games)
         matchup_known = seeded != "미정" and challenger != "미정"
         current = winner is None and matchup_known and bool(games)
         if winner:
             status = f"{winner} 다음 라운드 진출" if index < 3 else f"{winner} 우승"
         elif current:
-            status = "진행 중" if any(game["finished"] for game in games) else "경기 예정"
+            if live_number is not None:
+                status = f"{live_number}차전 경기 중"
+            elif awaiting_result:
+                status = "경기 종료 · 결과 반영 대기"
+            elif finished_numbers:
+                status = f"{finished_numbers[-1]}차전 종료"
+                if remaining:
+                    status += " · 다음 경기 대기"
+            else:
+                status = "경기 예정"
         elif matchup_known:
             status = "일정 미정"
         else:
@@ -620,15 +638,20 @@ def build_postseason_section(rounds: list[dict[str, object]]) -> str:
             if winner and not game["finished"]:
                 continue
             label = (f'{game["away"]} {game["awayScore"]} : '
-                     f'{game["homeScore"]} {game["home"]}' if game["finished"]
+                     f'{game["homeScore"]} {game["home"]}'
+                     if game["awayScore"] is not None and game["homeScore"] is not None
                      else f'{game["away"]} vs {game["home"]}')
+            game_status = ("종료" if game["finished"]
+                           else "경기 중" if game.get("state") == "2"
+                           else "종료 · 결과 반영 대기" if game.get("state") == "3"
+                           else "예정")
             game_url = BASE_URL + "/Schedule/GameCenter/Main.aspx?" + urllib.parse.urlencode({
                 "gameDate": str(game["date"]).replace("-", ""),
                 "gameId": game["gameId"],
             })
             game_rows.append(
                 f'<li><span>{number}차전 · {html.escape(game["date"])} '
-                f'{html.escape(game["time"])} · {html.escape(label)}</span>'
+                f'{html.escape(game["time"])} · {html.escape(label)} · {game_status}</span>'
                 f'<a href="{html.escape(game_url, quote=True)}" target="_blank" rel="noreferrer">경기 정보</a></li>'
             )
         next_label = ""
@@ -641,8 +664,9 @@ def build_postseason_section(rounds: list[dict[str, object]]) -> str:
         cards.append(
             f'<article class="series-card{" is-current" if current else ""}">'
             f'<h2>{round_data["name"]}</h2><p class="series-rule">{rule}</p>'
+            f'<p class="series-score-label">시리즈 전적</p>'
             f'<div class="series-score"><span>{html.escape(seeded)}</span>'
-            f'<strong>{wins.get(seeded, 0)} : {wins.get(challenger, 0)}</strong>'
+            f'<strong>{wins.get(seeded, 0)}승 : {wins.get(challenger, 0)}승</strong>'
             f'<span>{html.escape(challenger)}</span></div>'
             f'<p class="series-status">{html.escape(status)}</p>{next_label}'
             f'<ul class="series-games">{"".join(game_rows) or "<li>경기 정보가 아직 없습니다.</li>"}</ul>'
